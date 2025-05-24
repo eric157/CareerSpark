@@ -12,10 +12,10 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
-import { contextualJobHelper } from '@/ai/flows/contextual-job-helper-flow'; // Import RAG flow
+import { contextualJobHelper } from '@/ai/flows/contextual-job-helper-flow';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import JobDetailModal from './JobDetailModal'; 
+import JobDetailModal from './JobDetailModal';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -29,7 +29,7 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); 
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
@@ -45,33 +45,36 @@ export default function ChatInterface() {
   const loadResumeData = (isInitialPageLoad: boolean = false, fromEvent: boolean = false) => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
     let resumeIsAvailable = false;
-    let newParsedResumeTextContent = ""; 
+    let newParsedResumeTextContent = "";
 
     if (storedResumeData) {
       try {
         const data = JSON.parse(storedResumeData);
         if (data && (
-            (Array.isArray(data.skills) && data.skills.length > 0) || 
+            (Array.isArray(data.skills) && data.skills.length > 0) ||
             (Array.isArray(data.experience) && data.experience.length > 0) ||
             (Array.isArray(data.education) && data.education.length > 0)
            )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
-          setResumeError(null);
+          setResumeError(null); // Clear previous error if data is valid
         } else {
-          console.warn("Stored resume data is invalid or empty. Clearing.");
+          console.warn("Stored resume data is invalid or empty. Clearing and prompting re-upload.");
           localStorage.removeItem('parsedResumeData');
           setResumeError("Your stored resume data was invalid. Please re-upload.");
+          newParsedResumeTextContent = ""; // Ensure it's empty
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
         setResumeError("Could not load your resume data. Please re-upload.");
+        newParsedResumeTextContent = ""; // Ensure it's empty
       }
-    } else { 
-      setResumeError(null); 
+    } else {
+      setResumeError(null); // No stored data, so no error.
+      newParsedResumeTextContent = ""; // Ensure it's empty
     }
-    
+
     setParsedResumeText(newParsedResumeTextContent);
 
     setMessages(prevMessages => {
@@ -79,20 +82,22 @@ export default function ChatInterface() {
       const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}`;
 
       if (isInitialPageLoad && prevMessages.length === 0) {
+         // Only add initial prompt if no messages exist AT ALL
         return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
-      } else if (fromEvent && resumeIsAvailable) { 
+      } else if (fromEvent && resumeIsAvailable) {
+        // Add "resume ready" only if triggered by event, resume is valid, and it's not already the last message
         const lastMessage = prevMessages[prevMessages.length - 1];
-        if (!lastMessage || (lastMessage.text !== RESUME_READY_TEXT && lastMessage.text !== INITIAL_PROMPT_TEXT )) {
-          return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
+        if (!lastMessage || (lastMessage.sender === 'ai' && lastMessage.text !== RESUME_READY_TEXT && lastMessage.text !== INITIAL_PROMPT_TEXT && lastMessage.text !== NO_RESUME_WARNING_TEXT )) {
+           return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
-      return prevMessages; 
+      return prevMessages; // No change if conditions not met
     });
   };
 
 
   useEffect(() => {
-    loadResumeData(true, false); 
+    loadResumeData(true, false); // Initial load check
 
     const handleResumeUpdateEvent = () => {
       toast({
@@ -100,7 +105,7 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      loadResumeData(false, true); 
+      loadResumeData(false, true); // Load triggered by event
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -119,7 +124,7 @@ export default function ChatInterface() {
   };
 
   useEffect(() => {
-    if (messages.length > 0 && !isDetailModalOpen) { 
+    if (messages.length > 0 && !isDetailModalOpen) {
       scrollToBottom('auto');
     }
   }, [messages, isDetailModalOpen]);
@@ -134,9 +139,46 @@ export default function ChatInterface() {
 
   const isGeneralQuestion = (query: string): boolean => {
     const q = query.toLowerCase().trim();
-    const questionKeywords = ["how", "what", "why", "explain", "tell me about", "can you"];
-    if (q.endsWith("?")) return true;
-    return questionKeywords.some(keyword => q.startsWith(keyword));
+
+    // Patterns that strongly indicate a general/informational question for RAG
+    const informationalPatterns = [
+      /roadmap for/, /guide to/, /steps to/, /how to become/, /learn about/,
+      /information on/, /pros and cons of/, /details about/,
+      /explain .* to me/, /tell me more about/, /how do i/, /how does .* work/,
+      /what are the (skills|requirements|responsibilities|duties)( for| related to)?/,
+      /tips for/, /advice on/, /best practices for/,
+      /^what is /, /^what are /, /^define /, /^compare /, /^explain /, /^tell me /, /^give me a (list|summary|explanation|roadmap|guide|overview|breakdown|report|plan)( of| for)?/
+    ];
+
+    if (informationalPatterns.some(pattern => pattern.test(q))) {
+      // Check for an override: if it explicitly asks to "find jobs" or "list roles" despite the info pattern
+      const explicitJobSearchCommands = [
+        /find .* (jobs|roles|positions|openings)/, 
+        /list .* (jobs|roles|positions|openings)/, 
+        /search for .* (jobs|roles|positions|openings)/, 
+        /show me .* (jobs|roles|positions|openings)/,
+        /get me .* (jobs|roles|positions|openings)/
+      ];
+      if (explicitJobSearchCommands.some(command => command.test(q))) {
+        return false; // It's an info pattern but overridden by explicit job search command
+      }
+      return true; // Matches a strong informational pattern
+    }
+
+    // Explicit question mark, if not caught by patterns above
+    if (q.endsWith("?")) {
+      // Avoid misclassifying direct job search commands ending with '?' as general questions
+      const jobSeekingKeywords = ["job", "jobs", "role", "roles", "position", "positions", "opening", "openings", "vacancy", "vacancies"];
+      const startsWithJobSearchAction = ["find", "search for", "list", "show me", "get me"].some(verb => q.startsWith(verb + " "));
+      
+      if(startsWithJobSearchAction && jobSeekingKeywords.some(keyword => q.includes(" " + keyword))) {
+         return false; // e.g. "find software engineer jobs in CA?" should be job search
+      }
+      return true; // General question ending with '?'
+    }
+    
+    // Default to job search if none of the above specific conditions are met
+    return false;
   };
 
 
@@ -155,10 +197,13 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (!parsedResumeText && !isGeneralQuestion(currentQuery)) { 
+    // If no resume is loaded, but it's NOT a general question, show warning.
+    // If it IS a general question, proceed even without a resume.
+    if ((!parsedResumeText || parsedResumeText.trim() === "") && !isGeneralQuestion(currentQuery)) {
         setMessages(prev => {
             const lastMessage = prev[prev.length -1];
-            if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev; 
+            // Avoid adding duplicate warnings
+            if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev;
             return [...prev, {
                 id: `ai-err-no-resume-${Date.now()}`,
                 sender: 'ai',
@@ -172,7 +217,6 @@ export default function ChatInterface() {
 
     try {
       if (isGeneralQuestion(currentQuery)) {
-        // Route to RAG flow
         const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-${Date.now()}`,
@@ -185,17 +229,16 @@ export default function ChatInterface() {
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
       } else {
-        // Route to Job Recommendation flow
         const aiJobResponse = await jobRecommendation({
-          resumeText: parsedResumeText || "No resume provided.", // Pass empty if not available
+          resumeText: parsedResumeText || "No resume provided.",
           userPreferences: currentQuery,
         });
 
-        let responseText = aiJobResponse.recommendedJobs.length > 0
+        let responseText = aiJobResponse.recommendedJobs && aiJobResponse.recommendedJobs.length > 0
           ? "Here are some job recommendations based on your query and resume:"
           : (aiJobResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
 
-        if (aiJobResponse.noResultsFeedback && aiJobResponse.recommendedJobs.length === 0) {
+        if (aiJobResponse.noResultsFeedback && (!aiJobResponse.recommendedJobs || aiJobResponse.recommendedJobs.length === 0)) {
           responseText = aiJobResponse.noResultsFeedback;
         }
 
@@ -206,7 +249,7 @@ export default function ChatInterface() {
           timestamp: new Date(),
           relatedJobs: aiJobResponse.recommendedJobs,
           searchQueryUsed: aiJobResponse.searchQueryUsed,
-          noResultsFeedback: aiJobResponse.noResultsFeedback && aiJobResponse.recommendedJobs.length === 0 ? aiJobResponse.noResultsFeedback : undefined,
+          noResultsFeedback: aiJobResponse.noResultsFeedback && (!aiJobResponse.recommendedJobs || aiJobResponse.recommendedJobs.length === 0) ? aiJobResponse.noResultsFeedback : undefined,
           isRAGResponse: false,
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
@@ -232,11 +275,12 @@ export default function ChatInterface() {
     }
   };
   
-  const isChatInputDisabled = isLoading || (!parsedResumeText && messages.length > 1); // Disable if loading, or if no resume and initial AI message already sent
+  const isChatInputDisabled = isLoading || (!parsedResumeText && messages.length > 1 && messages[messages.length-1]?.text !== INITIAL_PROMPT_TEXT);
+
 
   return (
     <>
-      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-20rem)] sm:h-[calc(100vh-16rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card animate-fadeInUp" style={{animationDelay: '0.4s'}}>
+      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-22rem)] sm:h-[calc(100vh-18rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card">
         <CardHeader className="bg-primary/10 dark:bg-primary/20 border-b border-primary/20">
           <CardTitle className="text-xl font-semibold flex items-center gap-2 text-primary">
             <Cpu className="h-6 w-6" /> AI Career Assistant
@@ -255,10 +299,10 @@ export default function ChatInterface() {
               <div
                 key={`${message.id}-${msgIdx}`}
                 className={`flex items-end gap-2.5 animate-fadeInUp`}
-                style={{ animationDelay: `${msgIdx * 0.05}s`}}
+                style={{ animationDelay: `${Math.min(msgIdx * 0.05, 0.5)}s`}} // Cap animation delay
               >
                 {message.sender === 'ai' && (
-                  <Avatar className="h-9 w-9 shadow-sm">
+                  <Avatar className="h-9 w-9 shadow-sm shrink-0">
                     <AvatarFallback className="bg-primary text-primary-foreground font-semibold">AI</AvatarFallback>
                   </Avatar>
                 )}
@@ -295,17 +339,17 @@ export default function ChatInterface() {
                       {message.relatedJobs.map((job, index) => {
                          const companyNameWords = job.company?.split(' ') || [];
                          let companyInitials = companyNameWords.length > 0 ? companyNameWords[0].substring(0,1) : "";
-                         if (companyNameWords.length > 1) companyInitials += companyNameWords[1].substring(0,1);
+                         if (companyNameWords.length > 1 && companyNameWords[1]) companyInitials += companyNameWords[1].substring(0,1);
                          if (!companyInitials) companyInitials = job.company?.substring(0,2) || '??';
                          const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials.toUpperCase())}`;
                         
-                        let dataAiHintForPlaceholder = "company logo"; 
+                        let dataAiHintForPlaceholder = "company logo";
                         if (job.company) {
-                            const words = job.company.split(' ');
+                            const words = job.company.split(' ').filter(w => w.length > 0);
                             const firstWord = words[0]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
                             if (firstWord) {
                                 dataAiHintForPlaceholder = firstWord.length > 15 ? firstWord.substring(0,15) : firstWord;
-                                if (words.length > 1) {
+                                if (words.length > 1 && words[1]) {
                                     const secondWord = words[1]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
                                     if (secondWord) {
                                       const combinedHint = `${firstWord} ${secondWord}`;
@@ -315,9 +359,10 @@ export default function ChatInterface() {
                             }
                         }
 
+
                         return (
-                        <Card 
-                            key={job.id || `job-${index}-${message.id}`} 
+                        <Card
+                            key={job.id || `job-${index}-${message.id}`}
                             className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group border-primary/10 hover:border-primary/30"
                             onClick={() => handleViewJobDetails(job)}
                         >
@@ -336,8 +381,8 @@ export default function ChatInterface() {
                           </div>
                           <p className="text-xs mt-2 line-clamp-3 text-muted-foreground">{job.summary || 'No summary available.'}</p>
                           <div className="flex flex-wrap gap-2 items-center mt-2.5">
-                            <Badge 
-                                variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} 
+                            <Badge
+                                variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"}
                                 className="text-xs py-0.5 px-2 shadow-sm"
                             >Relevance: {job.relevanceScore}%
                             </Badge>
@@ -345,11 +390,11 @@ export default function ChatInterface() {
                             {job.employmentType && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90">{job.employmentType}</Badge>}
                           </div>
                           <div className="flex items-center justify-between mt-2.5">
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
+                            <Button
+                                variant="ghost"
+                                size="sm"
                                 className="p-0 h-auto text-primary text-xs font-medium hover:text-primary/80 group-hover:underline"
-                                onClick={(e) => { e.stopPropagation(); handleViewJobDetails(job); }} 
+                                onClick={(e) => { e.stopPropagation(); handleViewJobDetails(job); }}
                             >
                                 <Eye size={14} className="mr-1.5" /> View Details
                             </Button>
@@ -373,7 +418,7 @@ export default function ChatInterface() {
                   </p>
                 </div>
                 {message.sender === 'user' && (
-                  <Avatar className="h-9 w-9 shadow-sm">
+                  <Avatar className="h-9 w-9 shadow-sm shrink-0">
                     <AvatarFallback className="bg-secondary text-secondary-foreground"><User size={18}/></AvatarFallback>
                   </Avatar>
                 )}
@@ -381,7 +426,7 @@ export default function ChatInterface() {
             ))}
             {isLoading && (
               <div className="flex items-end gap-2.5 justify-start animate-fadeInUp">
-                  <Avatar className="h-9 w-9 shadow-sm">
+                  <Avatar className="h-9 w-9 shadow-sm shrink-0">
                     <AvatarFallback className="bg-primary text-primary-foreground font-semibold">AI</AvatarFallback>
                   </Avatar>
                   <div className="max-w-[70%] rounded-xl px-4 py-3 shadow-lg bg-card text-card-foreground border border-border rounded-bl-none">
@@ -399,18 +444,18 @@ export default function ChatInterface() {
           <Button
             variant="outline"
             size="icon"
-            className="absolute bottom-20 right-4 z-10 rounded-full shadow-lg bg-card hover:bg-muted border-primary/30"
+            className="absolute bottom-20 right-4 z-10 rounded-full shadow-lg bg-card hover:bg-muted border-primary/30 text-primary hover:text-primary/80"
             onClick={() => scrollToBottom('smooth')}
             aria-label="Scroll to bottom"
           >
-            <ArrowDown className="h-5 w-5 text-primary" />
+            <ArrowDown className="h-5 w-5" />
           </Button>
         )}
         <CardFooter className="p-4 border-t bg-primary/10 dark:bg-primary/20 border-primary/20">
           <form onSubmit={handleSubmit} className="flex w-full items-center gap-3">
             <Input
               type="text"
-              placeholder={isChatInputDisabled ? "Upload your resume first..." : "Ask a question or describe jobs you're looking for..."}
+              placeholder={isChatInputDisabled ? "Upload your resume first to find jobs..." : "Ask a career question or describe jobs..."}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50 bg-background placeholder:text-muted-foreground/80"
@@ -423,12 +468,11 @@ export default function ChatInterface() {
           </form>
         </CardFooter>
       </Card>
-      <JobDetailModal 
-        job={selectedJobDetail} 
-        isOpen={isDetailModalOpen} 
-        onClose={() => setIsDetailModalOpen(false)} 
+      <JobDetailModal
+        job={selectedJobDetail}
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
       />
     </>
   );
 }
-
