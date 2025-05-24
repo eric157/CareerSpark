@@ -14,22 +14,27 @@ import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import JobDetailModal from './JobDetailModal'; // Import the new modal component
+import JobDetailModal from './JobDetailModal'; 
+import { useToast } from '@/hooks/use-toast';
+
 
 const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search today?";
 const INITIAL_PROMPT_TEXT = "Hello! Upload your resume using the form so I can assist you with personalized job recommendations.";
+const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page.";
+
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null);
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); // null means not yet checked, "" means checked and no valid resume
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const [selectedJobDetail, setSelectedJobDetail] = useState<RecommendedJob | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const { toast } = useToast();
 
   const handleViewJobDetails = (job: RecommendedJob) => {
     setSelectedJobDetail(job);
@@ -39,64 +44,64 @@ export default function ChatInterface() {
   const loadResumeData = (isInitialPageLoad: boolean = false) => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
     let resumeIsAvailable = false;
+    let newParsedResumeTextContent = "";
 
     if (storedResumeData) {
       try {
         const data = JSON.parse(storedResumeData);
         if (data && (data.skills?.length || data.experience?.length || data.education?.length)) {
-          const newParsedResumeText = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
-          setParsedResumeText(newParsedResumeText);
-          setResumeError(null);
+          newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
+          setResumeError(null);
         } else {
-          // Stored data exists but is empty or invalid. Clear it.
+          console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
-          setParsedResumeText(""); 
-          setResumeError("Your previous resume data was invalid. Please re-upload.");
+          setResumeError("Your stored resume data was invalid. Please re-upload.");
           resumeIsAvailable = false;
         }
       } catch (e) {
-        console.error("Failed to parse/validate resume from localStorage", e);
+        console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
-        setParsedResumeText(""); 
-        setResumeError("Could not load your resume data. Please re-upload if you previously had one.");
+        setResumeError("Could not load your resume data. Please re-upload.");
         resumeIsAvailable = false;
       }
     } else { 
-      setParsedResumeText(""); 
       setResumeError(null); 
       resumeIsAvailable = false;
     }
+    
+    setParsedResumeText(newParsedResumeTextContent); // Always set, empty if no resume
 
     setMessages(prevMessages => {
+      // On initial load, if no messages yet, add the initial prompt.
       if (isInitialPageLoad && prevMessages.length === 0) {
-         const uniqueId = `ai-msg-initial-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        return [{
-          id: uniqueId,
-          sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date()
-        }];
+        const uniqueId = `ai-msg-initial-${Date.now()}`;
+        return [{ id: uniqueId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
       }
-      // Only add resume ready text if triggered by resumeUpdated event, not on initial load by default.
+      // If triggered by resumeUpdated event (not initial load) AND resume is now available
       else if (!isInitialPageLoad && resumeIsAvailable) {
-        const lastMessage = prevMessages[prevMessages.length - 1];
-        if (!lastMessage || lastMessage.text !== RESUME_READY_TEXT) {
-          const uniqueId = `ai-msg-resume-ready-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-          return [...prevMessages, {
-            id: uniqueId,
-            sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date()
-          }];
+        const lastMessageText = prevMessages[prevMessages.length - 1]?.text;
+        // Add RESUME_READY_TEXT only if it's not already the last message.
+        if (lastMessageText !== RESUME_READY_TEXT) {
+          const uniqueId = `ai-msg-resume-ready-${Date.now()}`;
+          return [...prevMessages, { id: uniqueId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
-      return prevMessages;
+      return prevMessages; // No change
     });
   };
 
 
   useEffect(() => {
-    loadResumeData(true); 
+    loadResumeData(true); // Initial load
 
     const handleResumeUpdateEvent = () => {
-      loadResumeData(false); 
+      toast({
+        title: "Resume Updated!",
+        description: "Your resume information has been loaded into the chat.",
+        variant: "default",
+      });
+      loadResumeData(false); // Triggered by event
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -115,7 +120,7 @@ export default function ChatInterface() {
   };
 
   useEffect(() => {
-    if (messages.length > 0 && !isDetailModalOpen) { // Don't autoscroll if modal is open
+    if (messages.length > 0 && !isDetailModalOpen) { 
       scrollToBottom('auto');
     }
   }, [messages, isDetailModalOpen]);
@@ -143,15 +148,14 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (parsedResumeText === null || !parsedResumeText) { 
-        const noResumeMsgText = "I couldn't find your resume details. Please upload your resume using the form for personalized job recommendations.";
+    if (parsedResumeText === null || !parsedResumeText.trim()) { 
         setMessages(prev => {
             const lastMessage = prev[prev.length -1];
-            if (lastMessage && lastMessage.text === noResumeMsgText && lastMessage.sender === 'ai') return prev; 
+            if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev; 
             return [...prev, {
-                id: `ai-err-no-resume-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
+                id: `ai-err-no-resume-${Date.now()}`,
                 sender: 'ai',
-                text: noResumeMsgText,
+                text: NO_RESUME_WARNING_TEXT,
                 timestamp: new Date(),
             }];
         });
@@ -169,13 +173,13 @@ export default function ChatInterface() {
         ? "Here are some job recommendations based on your query and resume:"
         : (aiResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
 
+      // Override responseText if noResultsFeedback is explicitly provided and no jobs are found
       if (aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0) {
         responseText = aiResponse.noResultsFeedback;
       }
 
-
       const aiMessage: ChatMessage = {
-        id: `ai-resp-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
+        id: `ai-resp-${Date.now()}`,
         sender: 'ai',
         text: responseText,
         timestamp: new Date(),
@@ -186,19 +190,26 @@ export default function ChatInterface() {
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
     } catch (error) {
-      console.error("Error processing message:", error);
-      const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred.";
-      const errorMessage: ChatMessage = {
-        id: `ai-err-${Date.now() + 1}-${Math.random().toString(36).substring(2,7)}`,
+      console.error("Error processing message with AI flow:", error);
+      const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred with the AI assistant.";
+      const aiErrorMessage: ChatMessage = {
+        id: `ai-err-flow-${Date.now()}`,
         sender: 'ai',
-        text: `Sorry, I encountered an error: ${errorMessageText}. Please try again.`,
+        text: `Sorry, I encountered an error: ${errorMessageText}. Please check the console for details or try again.`,
         timestamp: new Date(),
       };
-      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+      setMessages((prevMessages) => [...prevMessages, aiErrorMessage]);
+      toast({
+        title: "AI Error",
+        description: errorMessageText,
+        variant: "destructive"
+      })
     } finally {
       setIsLoading(false);
     }
   };
+
+  const isChatDisabled = isLoading || parsedResumeText === null || parsedResumeText.trim() === "";
 
   return (
     <>
@@ -246,26 +257,26 @@ export default function ChatInterface() {
                       {message.relatedJobs.map((job, index) => {
                         const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
                         const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials)}`;
-                        const companyNameFirstWord = job.company?.split(' ')[0]?.toLowerCase() || "company";
+                        const companyNameFirstWord = job.company?.split(' ')[0]?.toLowerCase().replace(/[^a-z0-9]/gi, '') || "company";
                         const dataAiHintForPlaceholder = companyNameFirstWord.length > 15 ? companyNameFirstWord.substring(0,15) : companyNameFirstWord;
 
                         return (
                         <Card 
-                            key={job.id || index} 
+                            key={job.id || `job-${index}-${message.id}`} // More robust key
                             className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
                             onClick={() => handleViewJobDetails(job)}
                         >
                           <div className="flex items-start gap-3">
                             <Image
                               src={placeholderImageUrl}
-                              alt={`${job.company} logo`}
+                              alt={`${job.company} logo placeholder`}
                               width={48} height={48}
                               className="rounded-lg border object-contain bg-muted flex-shrink-0 mt-1"
                               data-ai-hint={dataAiHintForPlaceholder}
                             />
                             <div className="flex-1 min-w-0">
                               <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors" title={job.title}>{job.title}</h4>
-                              <p className="text-xs text-muted-foreground truncate" title={`${job.company} - ${job.location}`}>{job.company} - {job.location}</p>
+                              <p className="text-xs text-muted-foreground truncate" title={`${job.company} - ${job.location}`}>{job.company} - {job.location || 'Not specified'}</p>
                             </div>
                           </div>
                           <p className="text-xs mt-2 line-clamp-3">{job.summary}</p>
@@ -279,16 +290,18 @@ export default function ChatInterface() {
                                 variant="ghost" 
                                 size="sm" 
                                 className="p-0 h-auto text-primary text-xs font-medium hover:text-primary/80 group-hover:underline"
-                                onClick={(e) => { e.stopPropagation(); handleViewJobDetails(job); }} // Stop propagation to prevent card click
+                                onClick={(e) => { e.stopPropagation(); handleViewJobDetails(job); }} 
                             >
                                 <Eye size={14} className="mr-1.5" /> View Details
                             </Button>
-                            {job.url && (
+                            {job.url ? (
                               <a href={job.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                                 <Button variant="link" size="sm" className="p-0 h-auto text-primary text-xs font-medium hover:text-primary/80">
                                     Original Post &rarr;
                                 </Button>
                               </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">No direct link</span>
                             )}
                           </div>
                         </Card>
@@ -342,13 +355,13 @@ export default function ChatInterface() {
             </Button>
             <Input
               type="text"
-              placeholder={parsedResumeText === "" && !resumeError ? "Upload resume or ask a general question..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
+              placeholder={parsedResumeText === null || !parsedResumeText.trim() ? "Upload your resume first..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50"
-              disabled={isLoading || parsedResumeText === null}
+              disabled={isChatDisabled}
             />
-            <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim() || parsedResumeText === null} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
+            <Button type="submit" size="icon" disabled={isChatDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
               <SendHorizonal className="h-5 w-5" />
               <span className="sr-only">Send message</span>
             </Button>

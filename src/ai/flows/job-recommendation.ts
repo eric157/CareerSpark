@@ -29,7 +29,7 @@ const RecommendedJobSchema = z.object({
   id: z.string().describe("A unique identifier for the job listing, derived directly from the 'id' field of a result from 'searchJobsTool'. This field is CRITICAL and MUST be the exact ID provided by the tool for the corresponding job. DO NOT use 'unknown', placeholders, or invent IDs."),
   title: z.string().describe('The title of the job.'),
   company: z.string().describe('The company offering the job.'),
-  location: z.string().describe('The location of the job. If not specified or known, use a general term like "Various locations" or "Not specified", but always include the field.'),
+  location: z.string().describe('The location of the job. If not specified or known by the searchJobsTool, use a general term like "Various locations" or "Not specified", but always include this field.'),
   summary: z.string().describe('A concise, AI-generated summary (2-3 sentences) explaining specifically why this job is a good match for the user, referencing their resume skills/experience and stated preferences. Make this compelling and personalized.'),
   description: z.string().describe('The full job description obtained from the source. This can be the same as the summary if a more detailed description is not available from the source.'),
   relevanceScore: z
@@ -39,16 +39,16 @@ const RecommendedJobSchema = z.object({
       'A score (0-100) indicating how relevant the job is to the user\'s comprehensive profile (resume + preferences). Higher scores mean better alignment.'
     ),
   source: z.string().default("webSearch").describe("Indicates the job was found via 'webSearch' using the searchJobsTool."),
-  url: z.string().url().optional().describe("URL to the job posting. Omit this field if no URL is available from the source."),
-  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). This must be a string if provided. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.'),
-  employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). This must be a string if provided. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.')
+  url: z.string().url().optional().describe("URL to the job posting. Omit this field entirely if no valid URL is available from the source (e.g., if searchJobsTool provides no URL for this job). Do not use `null`."),
+  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). This must be a string if provided by searchJobsTool. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.'),
+  employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). This must be a string if provided by searchJobsTool. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.')
 });
 
 const JobRecommendationOutputSchema = z.object({
   recommendedJobs: z
     .array(RecommendedJobSchema)
     .describe('A list of up to 5 highly relevant jobs recommended to the user, with detailed justifications and relevance scores.'),
-  searchQueryUsed: z.string().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit if the tool was not used or no query was formed."),
+  searchQueryUsed: z.string().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit this field if the tool was not used or no query was formed."),
   noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit this field if results were found.")
 });
 export type JobRecommendationOutput = z.infer<typeof JobRecommendationOutputSchema>;
@@ -87,17 +87,17 @@ Your Task:
     *   **Evaluation Criteria for Each Job:**
         *   **Skill & Experience Match:** How well do the job requirements align with the 'resumeText'?
         *   **Preference Fit:** Does it match the 'userPreferences' (role, industry, location, type)?
-        *   **Job Details:** Consider recency (if 'postedDate' is available) and 'employmentType'.
+        *   **Job Details:** Consider recency (if 'postedDate' is available from the tool) and 'employmentType' (if available from the tool).
 
 4.  **Format Output for Each Recommended Job:**
     *   For each selected job, populate ALL fields in the 'RecommendedJobSchema'.
-    *   **'id': CRITICAL! This MUST be the exact, non-empty string identifier provided by the 'searchJobsTool' for this specific job (from the tool's 'id' field in its output). DO NOT invent IDs, use placeholders like 'unknown', or leave it blank. If the tool did not provide an ID for a job you are considering, you should probably discard that job result.**
-    *   'title', 'company', 'location', 'description': Directly from the search tool's output for the corresponding job.
+    *   **'id': CRITICAL! This MUST be the exact, non-empty string identifier provided by the 'searchJobsTool' for this specific job (from the tool's 'id' field in its output). DO NOT invent IDs, use placeholders like 'unknown', or leave it blank. If the tool did not provide a valid ID for a job result, you should discard that job result.**
+    *   'title', 'company', 'location', 'description': Directly from the search tool's output for the corresponding job. If 'location' is missing from the tool's output for a job, set it to "Not specified".
     *   'summary': CRITICAL. Write a concise (2-3 sentences), personalized summary explaining EXACTLY WHY this job is a strong match for THIS user. Refer to specific skills/experiences from 'resumeText' and elements from 'userPreferences'. Example: "This Senior Developer role at TechCorp aligns with your 7 years of Java backend experience and preference for remote fintech positions mentioned in your resume and query."
     *   'relevanceScore': Assign a score from 0-100.
     *   'source': This should always be 'webSearch' as you are using the tool.
-    *   'url': Provide the URL from the search tool. Omit this field if not available.
-    *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool, include them. If they are not available, are null, or are not strings, OMIT these fields entirely. DO NOT use 'null'.
+    *   'url': Provide the URL from the search tool's output for the job. If the tool's output for this job does not include a 'url' or its value is not a valid URL string, OMIT this 'url' field entirely from your output for this job. DO NOT use 'null'.
+    *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool's output for the job, include them. If they are not available as strings, are null, or are not provided by the tool for this job, OMIT these fields entirely from your output for this job. DO NOT use 'null'.
 
 5.  **Conditional Output Fields:**
 
