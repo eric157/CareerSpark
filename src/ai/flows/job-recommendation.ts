@@ -65,10 +65,10 @@ const jobRecommendationPrompt = ai.definePrompt({
   prompt: `You are an AI Career Advisor. Your goal is to provide up to 5 highly relevant job recommendations using the 'searchJobsTool'.
 
 User's Resume Details:
-{{resumeText}}
+{{{resumeText}}}
 
 User's Stated Preferences / Current Search Query:
-{{userPreferences}}
+{{{userPreferences}}}
 
 Your Task:
 
@@ -80,7 +80,6 @@ Your Task:
     *   Based on your analysis, construct an OPTIMAL search query string for the 'searchJobsTool'. This query MUST be a synthesis of the user's chat query ('userPreferences') AND key elements extracted from their 'resumeText'.
     *   For example, if 'userPreferences' is "remote marketing jobs" and 'resumeText' mentions "social media management" and "SEO", a good query for the tool might be "remote social media marketing SEO jobs".
     *   Extract a potential location from 'userPreferences' to pass to the tool's location parameter. If no location is specified, you can omit it for the tool.
-    *   If you use the 'searchJobsTool', record the exact query you use in the 'searchQueryUsed' field of your output. If you cannot form a meaningful query or decide not to search, omit 'searchQueryUsed'.
 
 3.  **Execute Search & Evaluate Results:**
     *   Use the 'searchJobsTool' with your formulated query.
@@ -100,9 +99,15 @@ Your Task:
     *   'url': Provide the URL from the search tool. Omit this field if not available.
     *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool, include them. If they are not available, are null, or are not strings, OMIT these fields entirely. DO NOT use 'null'.
 
-5.  **Handling No/Poor Results & 'noResultsFeedback' Field:**
-    *   **If the 'recommendedJobs' array in your output will contain one or more jobs:** The 'noResultsFeedback' field MUST NOT BE PRESENT in your output. OMIT IT COMPLETELY. Do not include it with a 'null' or empty string value.
-    *   **If the 'recommendedJobs' array in your output will be empty (e.g., search tool returned no results, or results were irrelevant):** You SHOULD include the 'noResultsFeedback' field. Its value MUST be a string providing a helpful message to the user (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills.").
+5.  **Conditional Output Fields:**
+
+    *   **Regarding the 'searchQueryUsed' field:**
+        *   **If you successfully used the 'searchJobsTool':** You MUST include the 'searchQueryUsed' field in your output. Its value MUST be the exact query string you passed to the tool.
+        *   **If you did NOT use the 'searchJobsTool' (e.g., you could not form a meaningful query, or decided against it):** The 'searchQueryUsed' field MUST BE COMPLETELY ABSENT from your output. Do not include it with a 'null' or empty string value. It must be omitted.
+
+    *   **Regarding the 'noResultsFeedback' field:**
+        *   **If the 'recommendedJobs' array in your output will contain one or more jobs:** The 'noResultsFeedback' field MUST BE COMPLETELY ABSENT from your output. Do not include it with a 'null' or empty string value. It must be omitted.
+        *   **If the 'recommendedJobs' array in your output will be empty (e.g., search tool returned no results, or results were irrelevant):** You MUST include the 'noResultsFeedback' field. Its value MUST be a string providing a helpful message to the user (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills.").
 
 Output MUST strictly adhere to 'JobRecommendationOutputSchema'.
 If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search; in this case, 'recommendedJobs' would be empty and you would use the 'noResultsFeedback' field.
