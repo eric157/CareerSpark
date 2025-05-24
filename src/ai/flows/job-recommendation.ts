@@ -49,7 +49,7 @@ const JobRecommendationOutputSchema = z.object({
     .array(RecommendedJobSchema)
     .describe('A list of up to 5 highly relevant jobs recommended to the user, with detailed justifications and relevance scores.'),
   searchQueryUsed: z.string().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit if the tool was not used or no query was formed."),
-  noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit if results were found.")
+  noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit this field if results were found.")
 });
 export type JobRecommendationOutput = z.infer<typeof JobRecommendationOutputSchema>;
 
@@ -80,7 +80,7 @@ Your Task:
     *   Based on your analysis, construct an OPTIMAL search query string for the 'searchJobsTool'. This query MUST be a synthesis of the user's chat query ('userPreferences') AND key elements extracted from their 'resumeText'.
     *   For example, if 'userPreferences' is "remote marketing jobs" and 'resumeText' mentions "social media management" and "SEO", a good query for the tool might be "remote social media marketing SEO jobs".
     *   Extract a potential location from 'userPreferences' to pass to the tool's location parameter. If no location is specified, you can omit it for the tool.
-    *   Record the exact query you use in the 'searchQueryUsed' field of your output. If you cannot form a meaningful query or decide not to search, omit 'searchQueryUsed'.
+    *   If you use the 'searchJobsTool', record the exact query you use in the 'searchQueryUsed' field of your output. If you cannot form a meaningful query or decide not to search, omit 'searchQueryUsed'.
 
 3.  **Execute Search & Evaluate Results:**
     *   Use the 'searchJobsTool' with your formulated query.
@@ -97,15 +97,16 @@ Your Task:
     *   'summary': CRITICAL. Write a concise (2-3 sentences), personalized summary explaining EXACTLY WHY this job is a strong match for THIS user. Refer to specific skills/experiences from 'resumeText' and elements from 'userPreferences'. Example: "This Senior Developer role at TechCorp aligns with your 7 years of Java backend experience and preference for remote fintech positions mentioned in your resume and query."
     *   'relevanceScore': Assign a score from 0-100.
     *   'source': This should always be 'webSearch' as you are using the tool.
-    *   'url': Provide the URL from the search tool. Omit if not available.
+    *   'url': Provide the URL from the search tool. Omit this field if not available.
     *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool, include them. If they are not available, are null, or are not strings, OMIT these fields entirely. DO NOT use 'null'.
 
 5.  **Handling No/Poor Results:**
     *   If the 'searchJobsTool' returns no results, or the results are of very low relevance, return an empty 'recommendedJobs' array.
-    *   In this case, provide a helpful message in the 'noResultsFeedback' field (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills."). Omit 'noResultsFeedback' if you found good jobs.
+    *   In this case, provide a helpful message IN THE 'noResultsFeedback' FIELD (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills.").
+    *   IMPORTANT: If you ARE returning jobs in 'recommendedJobs', then you MUST OMIT the 'noResultsFeedback' field entirely from your output. Do not include it with a null or empty string value if jobs are found.
 
 Output MUST strictly adhere to 'JobRecommendationOutputSchema'.
-If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search.
+If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search, and in this case, use the 'noResultsFeedback' field.
 `,
 });
 
