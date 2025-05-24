@@ -17,7 +17,7 @@ import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
 // Internal Schemas (not directly exported as constants)
 const JobSearchInputSchema = z.object({
   query: z.string().describe('The search query for job roles (e.g., "React developer in San Francisco").'),
-  numResults: z.number().optional().default(10).describe('The desired number of search results (max 10, will be capped by API limits).'),
+  numResults: z.number().optional().default(10).describe('The desired number of search results (max 10, will be capped by API limits). This also dictates how many detailed listing lookups will be attempted.'),
   location: z.string().optional().describe('Optional location for the job search (e.g., "Austin, TX", "Remote")'),
 });
 export type JobSearchInput = z.infer<typeof JobSearchInputSchema>;
@@ -27,7 +27,7 @@ const JobSearchResultSchema = z.object({
   title: z.string().describe('The job title.'),
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job. If not provided, it will be undefined.'),
-  url: z.string().url().optional().describe('A URL link to the job posting or a Google Jobs link. This field should be omitted entirely if no valid URL is available from the source or if it\'s null. Do not use `null`.'),
+  url: z.string().url().optional().describe('A URL link to the job posting. This should be the most direct application or viewing link available (e.g., from apply_options). Omit this field entirely if no valid URL is available from the source or if it\'s null. Do not use `null`.'),
   description: z.string().optional().describe('A brief snippet or summary of the job, used as description.'),
   postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). Will be undefined if not available as a string.'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). Will be undefined if not available as a string.')
@@ -46,89 +46,132 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
     return generateDynamicMockResults(input, 'SERPAPI_API_KEY not found. Real job search disabled.');
   }
 
-  const searchParams = new URLSearchParams({
+  // Step 1: Initial search for jobs to get job_ids
+  const initialSearchParams = new URLSearchParams({
     engine: 'google_jobs',
     q: input.query,
     api_key: apiKey,
-    hl: 'en', 
-    gl: 'us', 
-    num: Math.min(input.numResults ?? 10, 20).toString(), // SerpApi typically allows more, but 10-20 is reasonable
+    hl: 'en',
+    gl: 'us',
+    num: Math.min(input.numResults ?? 10, 15).toString(), // Cap initial results, details fetched for these.
   });
 
   if (input.location) {
-    searchParams.append('location', input.location);
+    initialSearchParams.append('location', input.location);
   }
 
-  const API_ENDPOINT = `https://serpapi.com/search.json?${searchParams.toString()}`;
+  const INITIAL_API_ENDPOINT = `https://serpapi.com/search.json?${initialSearchParams.toString()}`;
+  let initialData;
 
   try {
-    console.log(`Fetching jobs from SerpApi: ${API_ENDPOINT.replace(apiKey, 'SERPAPI_API_KEY_HIDDEN')}`);
-    const response = await fetch(API_ENDPOINT, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    console.log(`Fetching initial jobs from SerpApi: ${INITIAL_API_ENDPOINT.replace(apiKey, 'SERPAPI_API_KEY_HIDDEN')}`);
+    const initialResponse = await fetch(INITIAL_API_ENDPOINT);
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`SerpApi HTTP Error: ${response.status} ${response.statusText}`, errorBody);
-      return generateDynamicMockResults(input, `SerpApi HTTP Error: ${response.status}. ${errorBody}. Consider checking API key or query.`);
+    if (!initialResponse.ok) {
+      const errorBody = await initialResponse.text();
+      console.error(`SerpApi HTTP Error (google_jobs): ${initialResponse.status} ${initialResponse.statusText}`, errorBody);
+      return generateDynamicMockResults(input, `SerpApi HTTP Error (google_jobs): ${initialResponse.status}. ${errorBody}.`);
     }
+    initialData = await initialResponse.json();
 
-    const data = await response.json();
-
-    if (data.error) { // SerpApi can return 200 OK but have an error in the JSON body
-        console.error('SerpApi returned an error in the response body:', data.error);
+    if (initialData.error) {
+        console.error('SerpApi returned an error in initial search (google_jobs):', initialData.error);
         console.error(`Context - Query: "${input.query}", Location: "${input.location || 'N/A'}"`);
-        return generateDynamicMockResults(input, `SerpApi API Error: ${data.error}`);
+        return generateDynamicMockResults(input, `SerpApi API Error (google_jobs): ${initialData.error}`);
     }
     
-    if (!data.jobs_results || data.jobs_results.length === 0) {
-      console.log('No job results from SerpApi for query:', input.query, 'Location:', input.location || 'N/A');
+    if (!initialData.jobs_results || initialData.jobs_results.length === 0) {
+      console.log('No job results from SerpApi (google_jobs) for query:', input.query, 'Location:', input.location || 'N/A');
       return [];
     }
 
-    return data.jobs_results.map((job: any): JobSearchResult => {
-      let determinedUrl: string | undefined = undefined;
+  } catch (error) {
+    console.error('Failed to fetch initial jobs from SerpApi (Network/other error):', error);
+    return generateDynamicMockResults(input, `Failed to connect to SerpApi (google_jobs). ${error instanceof Error ? error.message : String(error)}`);
+  }
 
-      // Prioritize links: direct provider link > apply link > any related link > Google jobs detail page
-      const potentialLinkSources = [
-        job.link, 
-        job.related_links?.find((l:any) => l.link?.includes('apply') || l.text?.toLowerCase().includes('apply'))?.link,
-        job.related_links?.find((l:any) => l.link)?.link,
-        job.job_id ? `https://www.google.com/search?q=${encodeURIComponent(job.title || input.query)}+${encodeURIComponent(job.company_name || '')}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htidocid=${job.job_id}` : undefined
-      ];
+  // Step 2: For each job_id, fetch detailed listing for apply_options
+  const processedJobsPromises = initialData.jobs_results.map(async (initialJob: any): Promise<JobSearchResult | null> => {
+    let determinedUrl: string | undefined = undefined;
+    const jobId = initialJob.job_id;
 
-      for (const pUrl of potentialLinkSources) {
-        if (pUrl && typeof pUrl === 'string') {
-          try {
-            new URL(pUrl); // Validate URL syntax
-            determinedUrl = pUrl;
-            break; 
-          } catch (e) {
-            // console.warn(`Invalid URL syntax for potential job link: ${pUrl}. Skipping.`);
+    if (jobId) {
+      const listingParams = new URLSearchParams({
+        engine: 'google_jobs_listing',
+        q: jobId,
+        api_key: apiKey,
+      });
+      const LISTING_API_ENDPOINT = `https://serpapi.com/search.json?${listingParams.toString()}`;
+
+      try {
+        // console.log(`Fetching listing details for job_id: ${jobId}`);
+        const listingResponse = await fetch(LISTING_API_ENDPOINT);
+        if (!listingResponse.ok) {
+          console.warn(`SerpApi HTTP Error for listing ${jobId} (google_jobs_listing): ${listingResponse.status} ${listingResponse.statusText}. Falling back on URL from initial search if available.`);
+          determinedUrl = initialJob.link; // Fallback
+        } else {
+          const listingData = await listingResponse.json();
+          if (listingData.error) {
+            console.warn(`SerpApi Error in listing response for ${jobId} (google_jobs_listing): ${listingData.error}. Falling back.`);
+            determinedUrl = initialJob.link; // Fallback
+          } else if (listingData.apply_options && listingData.apply_options.length > 0) {
+            const companyApplyOption = listingData.apply_options.find((opt: any) => 
+              opt.title?.toLowerCase().includes('company website') || 
+              opt.title?.toLowerCase().includes('apply direct')
+            );
+            determinedUrl = companyApplyOption?.link || listingData.apply_options[0].link;
+          } else {
+            // No apply_options, try original link from initial search
+            determinedUrl = initialJob.link;
           }
         }
+      } catch (listingError) {
+        console.warn(`Failed to fetch listing details for job_id ${jobId} (google_jobs_listing):`, listingError instanceof Error ? listingError.message : String(listingError), `. Falling back.`);
+        determinedUrl = initialJob.link; // Fallback
       }
-      
-      return {
-        id: job.job_id || uuidv4(),
-        title: job.title || 'N/A',
-        company: job.company_name || 'N/A',
-        location: job.location, // Will be undefined if not present in API response
-        url: determinedUrl, // Will be undefined if no valid URL was found
-        description: job.description || `Job details for ${job.title || 'this role'} at ${job.company_name || 'this company'}.`, // SerpApi 'description' is usually a snippet
-        postedDate: job.detected_extensions?.posted_at || undefined, // Convert null to undefined
-        employmentType: job.detected_extensions?.schedule_type || undefined, // Convert null to undefined
-      };
-    });
-  
-  } catch (error) {
-    console.error('Failed to fetch jobs from SerpApi (Network/other error):', error);
-    return generateDynamicMockResults(input, `Failed to connect to SerpApi. ${error instanceof Error ? error.message : String(error)}`);
-  }
+    } else {
+        // No job_id from initial search, try to use initialJob.link
+        determinedUrl = initialJob.link;
+    }
+    
+    // Validate determinedUrl and provide a Google Jobs detail page as a final fallback if needed and job_id exists
+    if (determinedUrl) {
+        try {
+            new URL(determinedUrl);
+        } catch (e) {
+            // console.warn(`Invalid URL from primary sources for job "${initialJob.title}": ${determinedUrl}. Trying Google Jobs detail link.`);
+            if (initialJob.job_id) {
+              determinedUrl = `https://www.google.com/search?q=${encodeURIComponent(initialJob.title || input.query)}+${encodeURIComponent(initialJob.company_name || '')}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htidocid=${initialJob.job_id}`;
+              try { new URL(determinedUrl); } catch (e2) { determinedUrl = undefined; } // Final check
+            } else {
+              determinedUrl = undefined;
+            }
+        }
+    } else if (initialJob.job_id) { // If no URL found yet, but we have a job_id, create Google Jobs link
+        determinedUrl = `https://www.google.com/search?q=${encodeURIComponent(initialJob.title || input.query)}+${encodeURIComponent(initialJob.company_name || '')}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htidocid=${initialJob.job_id}`;
+        try { new URL(determinedUrl); } catch (e2) { determinedUrl = undefined; } // Final check
+    } else {
+        determinedUrl = undefined;
+    }
+
+    const description = initialJob.description || `Details for ${initialJob.title || 'this role'} at ${initialJob.company_name || 'this company'}.`;
+
+    return {
+      id: initialJob.job_id || uuidv4(), // Use SerpApi job_id if available
+      title: initialJob.title || 'N/A',
+      company: initialJob.company_name || 'N/A',
+      location: initialJob.location || undefined,
+      url: determinedUrl,
+      description: description,
+      postedDate: typeof initialJob.detected_extensions?.posted_at === 'string' ? initialJob.detected_extensions.posted_at : undefined,
+      employmentType: typeof initialJob.detected_extensions?.schedule_type === 'string' ? initialJob.detected_extensions.schedule_type : undefined,
+    };
+  });
+
+  const resolvedJobs = await Promise.all(processedJobsPromises);
+  return resolvedJobs.filter(job => job !== null) as JobSearchOutput;
 }
+
 
 function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): JobSearchOutput {
   const results: JobSearchOutput = [];
@@ -145,7 +188,7 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
   const companies = ["Innovatech Solutions", "FutureAI Dynamics", "CyberSec Corp Ltd.", "GreenLeaf Organics", "Quantum Leap AI"];
   const jobTypes = ["Full-time", "Contract", "Part-time", "Internship"];
 
-  const numToGenerate = Math.min(input.numResults ?? 3, 3); // Generate fewer mocks
+  const numToGenerate = Math.min(input.numResults ?? 3, 3); 
 
   for (let i = 0; i < numToGenerate ; i++) {
     const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", "internship", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
@@ -179,14 +222,12 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
 export const searchJobsTool = ai.defineTool(
   {
     name: 'searchJobsTool',
-    description: 'Searches the web for job listings based on a query, and optionally a location. Use this to find current job openings. Returns job details including ID, title, company, location, URL, description, posted date, and employment type.',
+    description: 'Searches the web for job listings based on a query, and optionally a location. It attempts to find direct application links. Use this to find current job openings. Returns job details including ID, title, company, location, URL, description, posted date, and employment type.',
     inputSchema: JobSearchInputSchema,
     outputSchema: JobSearchOutputSchema,
   },
   async (input) => {
-    // Cap the number of results requested from the API to a reasonable limit (e.g., 10-15)
-    const cappedInput = { ...input, numResults: Math.min(input.numResults ?? 10, 15) };
+    const cappedInput = { ...input, numResults: Math.min(input.numResults ?? 10, 15) }; // numResults now indicates how many detailed listings will be attempted.
     return fetchJobsFromSerpApi(cappedInput);
   }
 );
-
