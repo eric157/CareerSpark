@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type ChangeEvent, type FormEvent } from 'react';
@@ -9,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, AlertTriangle, Loader2, ListChecks, Briefcase, GraduationCap } from 'lucide-react';
 import { parseResume, type ParseResumeOutput } from '@/ai/flows/resume-parsing';
-import { useRouter } from 'next/navigation';
+// useRouter is not needed if we're not redirecting
 import { useToast } from '@/hooks/use-toast';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -23,7 +24,7 @@ export default function ResumeUploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParseResumeOutput | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const router = useRouter();
+  // const router = useRouter(); // Not redirecting anymore
   const { toast } = useToast();
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -56,7 +57,7 @@ export default function ResumeUploadForm() {
     setIsLoading(true);
     setError(null);
     setParsedData(null);
-    setUploadProgress(30); // Initial progress
+    setUploadProgress(30); 
 
     try {
       const reader = new FileReader();
@@ -68,15 +69,19 @@ export default function ResumeUploadForm() {
           const result = await parseResume({ resumeDataUri });
           setUploadProgress(100);
           setParsedData(result);
-          localStorage.setItem('parsedResumeData', JSON.stringify(result)); // Persist data
+          localStorage.setItem('parsedResumeData', JSON.stringify(result)); 
+          
+          // Dispatch a custom event to notify ChatInterface
+          window.dispatchEvent(new CustomEvent('resumeUpdated'));
+
           toast({
             title: "Resume Parsed Successfully!",
-            description: "Your profile has been updated with the extracted information.",
+            description: "Your profile has been updated. You can now chat with the AI.",
             variant: "default",
             duration: 5000,
           });
-          // Optionally redirect to profile page after a delay
-          // setTimeout(() => router.push('/profile'), 2000);
+          setFile(null); // Clear the file input
+          // document.getElementById('resumeFile') as HTMLInputElement).value = ''; // More direct way to clear
         } catch (aiError) {
           console.error('AI parsing error:', aiError);
           setError('Failed to parse resume. Please try again or use a different file.');
@@ -106,16 +111,16 @@ export default function ResumeUploadForm() {
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <Label htmlFor="resumeFile" className="text-base font-medium">Resume File</Label>
+          <Label htmlFor="resumeFile" className="text-sm font-medium">Resume File</Label>
           <Input
             id="resumeFile"
             type="file"
             onChange={handleFileChange}
             accept=".pdf,.docx"
-            className="mt-1 text-base file:text-primary file:font-semibold file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-primary/10 hover:file:bg-primary/20"
+            className="mt-1 text-sm file:text-primary file:font-semibold file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-primary/10 hover:file:bg-primary/20"
             disabled={isLoading}
           />
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             Supported formats: PDF, DOCX. Max size: {MAX_FILE_SIZE_MB}MB.
           </p>
         </div>
@@ -129,16 +134,16 @@ export default function ResumeUploadForm() {
           </div>
         )}
         {error && (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="mt-2">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Upload Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <Button type="submit" disabled={isLoading || !file} className="w-full sm:w-auto text-base py-3 px-6">
+        <Button type="submit" disabled={isLoading || !file} className="w-full sm:w-auto text-sm py-2 px-4">
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...
             </>
           ) : (
             'Analyze Resume'
@@ -146,52 +151,36 @@ export default function ResumeUploadForm() {
         </Button>
       </form>
 
-      {parsedData && (
-        <Card className="mt-8 border-primary shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl flex items-center gap-2">
-              <CheckCircle className="h-7 w-7 text-green-500" />
+      {parsedData && !isLoading && (
+        <Card className="mt-6 border-primary/50 shadow-md">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-md flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
               Resume Analysis Complete!
             </CardTitle>
-            <CardDescription>
-              Here's what we extracted from your resume. This information will be used for job matching.
-              You can view this on your <a href="/profile" className="text-primary hover:underline">profile page</a>.
+            <CardDescription className="text-xs">
+              This extracted information is now being used for personalized job matching in the chat.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-3 text-sm pt-2">
             <div>
-              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2"><ListChecks className="text-accent"/>Skills</h3>
+              <h3 className="text-xs font-semibold mb-1 flex items-center gap-1"><ListChecks className="text-accent h-4 w-4"/>Skills Extracted:</h3>
               {parsedData.skills.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1 bg-secondary/30 p-4 rounded-md">
-                  {parsedData.skills.map((skill, index) => (
-                    <li key={index} className="text-sm">{skill}</li>
+                <div className="flex flex-wrap gap-1">
+                  {parsedData.skills.slice(0, 5).map((skill, index) => ( // Show a few skills
+                    <span key={index} className="bg-secondary/50 text-secondary-foreground/80 text-xs px-2 py-0.5 rounded-full">
+                      {skill}
+                    </span>
                   ))}
-                </ul>
-              ) : <p className="text-sm text-muted-foreground">No skills extracted.</p>}
+                  {parsedData.skills.length > 5 && <span className="text-xs text-muted-foreground">...and more.</span>}
+                </div>
+              ) : <p className="text-xs text-muted-foreground">No skills prominently extracted.</p>}
             </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2"><Briefcase className="text-accent"/>Experience</h3>
-              {parsedData.experience.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1 bg-secondary/30 p-4 rounded-md">
-                  {parsedData.experience.map((exp, index) => (
-                    <li key={index} className="text-sm">{exp}</li>
-                  ))}
-                </ul>
-              ) : <p className="text-sm text-muted-foreground">No experience extracted.</p>}
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2"><GraduationCap className="text-accent"/>Education</h3>
-              {parsedData.education.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1 bg-secondary/30 p-4 rounded-md">
-                  {parsedData.education.map((edu, index) => (
-                    <li key={index} className="text-sm">{edu}</li>
-                  ))}
-                </ul>
-              ) : <p className="text-sm text-muted-foreground">No education extracted.</p>}
-            </div>
+            {/* Can add similar brief sections for experience and education if desired */}
           </CardContent>
         </Card>
       )}
     </div>
   );
 }
+

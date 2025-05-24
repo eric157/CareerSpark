@@ -9,12 +9,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Paperclip, SendHorizonal, User, Cpu, Search, AlertTriangle, Info } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import Link from 'next/link';
+import Link from 'next/link'; // Keep for external job links
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation'; 
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
-import { Alert, AlertDescription } from '@/components/ui/alert'; // Added Alert
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 
 export default function ChatInterface() {
@@ -35,14 +35,50 @@ export default function ChatInterface() {
         setResumeError(null);
       } catch (e) {
         console.error("Failed to parse resume data from localStorage", e);
-        setParsedResumeText(""); // Set to empty string to indicate an issue
-        setResumeError("Could not load your resume data. Please try re-uploading.");
+        setParsedResumeText(""); 
+        setResumeError("Could not load your resume data. Please try re-uploading using the form above.");
       }
     } else {
-      setParsedResumeText(""); // Set to empty string if no resume is uploaded
-      // No error message initially, will prompt in chat
+      setParsedResumeText(""); 
     }
   }, []);
+
+  // Effect to re-check localStorage if resume upload form updates it
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const storedResumeData = localStorage.getItem('parsedResumeData');
+      if (storedResumeData) {
+        try {
+          const data = JSON.parse(storedResumeData);
+          const text = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
+          setParsedResumeText(text);
+          setResumeError(null);
+           // Add a friendly message if this is the first time after upload
+          if (messages.length === 0 || messages[messages.length-1]?.text.includes("upload your resume")) {
+             const resumeReadyMsg: ChatMessage = {
+                id: (Date.now() + 2).toString(),
+                sender: 'ai',
+                text: "Great! I see your resume. How can I help you with your job search today?",
+                timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, resumeReadyMsg]);
+          }
+        } catch (e) {
+          // Error already handled by initial load, or form should show error
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange); // For changes in other tabs (less likely here)
+    // Custom event listener for when ResumeUploadForm successfully updates localStorage
+    window.addEventListener('resumeUpdated', handleStorageChange);
+
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('resumeUpdated', handleStorageChange);
+    };
+  }, [messages]);
 
 
   const scrollToBottom = () => {
@@ -72,7 +108,7 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (parsedResumeText === null) { // Still loading resume
+    if (parsedResumeText === null) { 
         const loadingResumeMsg: ChatMessage = {
             id: (Date.now() + 1).toString(),
             sender: 'ai',
@@ -80,15 +116,24 @@ export default function ChatInterface() {
             timestamp: new Date(),
         };
         setMessages((prevMessages) => [...prevMessages, loadingResumeMsg]);
-        setIsLoading(false);
-        return;
-    }
-
-    if (!parsedResumeText) {
-        const noResumeMsg: ChatMessage = {
+        // Give a brief moment for localStorage to potentially load
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (parsedResumeText === null || !parsedResumeText) { // Re-check after pause
+            const noResumeMsg: ChatMessage = {
+                id: (Date.now() + 2).toString(),
+                sender: 'ai',
+                text: "I couldn't find your resume details. Please upload your resume using the form above for personalized job recommendations.",
+                timestamp: new Date(),
+            };
+            setMessages((prevMessages) => [...prevMessages.filter(m => m.text !== "Checking for your resume..."), noResumeMsg]);
+            setIsLoading(false);
+            return;
+        }
+    } else if (!parsedResumeText) {
+         const noResumeMsg: ChatMessage = {
             id: (Date.now() + 1).toString(),
             sender: 'ai',
-            text: "I couldn't find your resume details. Please upload your resume first for personalized job recommendations. You can do that [here](/upload-resume).",
+            text: "I couldn't find your resume details. Please upload your resume using the form above for personalized job recommendations.",
             timestamp: new Date(),
         };
         setMessages((prevMessages) => [...prevMessages, noResumeMsg]);
@@ -145,14 +190,14 @@ export default function ChatInterface() {
           {resumeError && (
              <Alert variant="destructive" className="mb-4">
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{resumeError} <Link href="/upload-resume" className="font-bold hover:underline">Upload again?</Link></AlertDescription>
+              <AlertDescription>{resumeError}</AlertDescription>
             </Alert>
           )}
-          {parsedResumeText === "" && !resumeError && messages.length === 0 && ( // Only show if no other messages and not yet loading
+          {parsedResumeText === "" && !resumeError && messages.length === 0 && ( 
             <Alert className="mb-4">
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Welcome! <Link href="/upload-resume" className="font-bold hover:underline">Upload your resume</Link> to get started with personalized job recommendations.
+                Welcome! Please use the form above to upload your resume to get started with personalized job recommendations.
                 Or, ask a general question about job searching.
               </AlertDescription>
             </Alert>
@@ -182,7 +227,6 @@ export default function ChatInterface() {
                     <Search size={12}/> Searched for: "{message.searchQueryUsed}"
                   </p>
                 )}
-                {/* Display noResultsFeedback if it exists and there are no jobs */}
                 {message.noResultsFeedback && (!message.relatedJobs || message.relatedJobs.length === 0) && (
                   <p className="text-xs text-muted-foreground mt-1">{message.noResultsFeedback}</p>
                 )}
@@ -198,7 +242,7 @@ export default function ChatInterface() {
                         <div className="flex items-start gap-2">
                           <Image 
                             src={placeholderImageUrl} 
-                            alt={job.company || 'company'} 
+                            alt={job.company || 'company logo'} 
                             width={40} height={40} 
                             className="rounded-md border object-contain bg-muted"
                             data-ai-hint={dataAiHintForPlaceholder}
@@ -218,9 +262,7 @@ export default function ChatInterface() {
                              <Button variant="link" size="sm" className="p-0 h-auto text-primary text-xs">View Original Post</Button>
                            </a>
                         ) : (
-                           <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || '')}`} passHref className="block mt-1">
-                             <Button variant="link" size="sm" className="p-0 h-auto text-primary text-xs">Search on Jobs Page</Button>
-                           </Link>
+                           <p className="text-xs text-muted-foreground mt-1">No direct link available.</p>
                         )}
                       </Card>
                        );
@@ -261,11 +303,11 @@ export default function ChatInterface() {
           </Button>
           <Input
             type="text"
-            placeholder={parsedResumeText === "" && !resumeError ? "Upload resume for job search or ask a general question..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
+            placeholder={parsedResumeText === "" && !resumeError ? "Upload resume above or ask a general question..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="flex-1"
-            disabled={isLoading || parsedResumeText === null}
+            disabled={isLoading || parsedResumeText === null} // Disable if resume is still in indeterminate loading state
           />
           <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim() || parsedResumeText === null} className="shrink-0">
             <SendHorizonal className="h-5 w-5" />
