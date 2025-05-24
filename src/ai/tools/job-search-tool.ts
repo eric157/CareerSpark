@@ -23,7 +23,7 @@ const JobSearchInputSchema = z.object({
 export type JobSearchInput = z.infer<typeof JobSearchInputSchema>;
 
 const JobSearchResultSchema = z.object({
-  id: z.string().describe('A unique identifier for the job listing.'),
+  id: z.string().describe('A unique identifier for the job listing, typically the job_id from SerpApi.'),
   title: z.string().describe('The job title.'),
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job. If not provided, it will be undefined.'),
@@ -52,7 +52,7 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
     api_key: apiKey,
     hl: 'en', 
     gl: 'us', 
-    num: Math.min(input.numResults ?? 10, 20).toString(),
+    num: Math.min(input.numResults ?? 10, 20).toString(), // SerpApi typically allows more, but 10-20 is reasonable
   });
 
   if (input.location) {
@@ -72,30 +72,32 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`SerpApi Error: ${response.status} ${response.statusText}`, errorBody);
-      return generateDynamicMockResults(input, `SerpApi Error: ${response.status}. ${errorBody}. Consider checking API key or query.`);
+      console.error(`SerpApi HTTP Error: ${response.status} ${response.statusText}`, errorBody);
+      return generateDynamicMockResults(input, `SerpApi HTTP Error: ${response.status}. ${errorBody}. Consider checking API key or query.`);
     }
 
     const data = await response.json();
 
-    if (data.error) {
+    if (data.error) { // SerpApi can return 200 OK but have an error in the JSON body
         console.error('SerpApi returned an error in the response body:', data.error);
-        return generateDynamicMockResults(input, `SerpApi returned an error: ${data.error}`);
+        console.error(`Context - Query: "${input.query}", Location: "${input.location || 'N/A'}"`);
+        return generateDynamicMockResults(input, `SerpApi API Error: ${data.error}`);
     }
     
     if (!data.jobs_results || data.jobs_results.length === 0) {
-      console.log('No job results from SerpApi for query:', input.query);
+      console.log('No job results from SerpApi for query:', input.query, 'Location:', input.location || 'N/A');
       return [];
     }
 
-    return data.jobs_results.map((job: any) => {
+    return data.jobs_results.map((job: any): JobSearchResult => {
       let determinedUrl: string | undefined = undefined;
 
+      // Prioritize links: direct provider link > apply link > any related link > Google jobs detail page
       const potentialLinkSources = [
-        job.link, // Most direct link from provider
-        job.related_links?.find((l:any) => l.link?.includes('apply') || l.text?.toLowerCase().includes('apply'))?.link, // Apply link
-        job.related_links?.find((l:any) => l.link)?.link, // Any other related link
-        job.job_id ? `https://www.google.com/search?q=${encodeURIComponent(job.title || input.query)}+${encodeURIComponent(job.company_name || '')}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htidocid=${job.job_id}` : undefined // Google Jobs detail page
+        job.link, 
+        job.related_links?.find((l:any) => l.link?.includes('apply') || l.text?.toLowerCase().includes('apply'))?.link,
+        job.related_links?.find((l:any) => l.link)?.link,
+        job.job_id ? `https://www.google.com/search?q=${encodeURIComponent(job.title || input.query)}+${encodeURIComponent(job.company_name || '')}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htidocid=${job.job_id}` : undefined
       ];
 
       for (const pUrl of potentialLinkSources) {
@@ -103,7 +105,7 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
           try {
             new URL(pUrl); // Validate URL syntax
             determinedUrl = pUrl;
-            break; // Use the first valid URL found in order of preference
+            break; 
           } catch (e) {
             // console.warn(`Invalid URL syntax for potential job link: ${pUrl}. Skipping.`);
           }
@@ -114,16 +116,16 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
         id: job.job_id || uuidv4(),
         title: job.title || 'N/A',
         company: job.company_name || 'N/A',
-        location: job.location, 
-        url: determinedUrl, 
-        description: job.description || job.snippet || `Details for ${job.title} at ${job.company_name}.`,
-        postedDate: job.detected_extensions?.posted_at || undefined, 
-        employmentType: job.detected_extensions?.schedule_type || undefined,
+        location: job.location, // Will be undefined if not present in API response
+        url: determinedUrl, // Will be undefined if no valid URL was found
+        description: job.description || `Job details for ${job.title || 'this role'} at ${job.company_name || 'this company'}.`, // SerpApi 'description' is usually a snippet
+        postedDate: job.detected_extensions?.posted_at || undefined, // Convert null to undefined
+        employmentType: job.detected_extensions?.schedule_type || undefined, // Convert null to undefined
       };
     });
   
   } catch (error) {
-    console.error('Failed to fetch jobs from SerpApi:', error);
+    console.error('Failed to fetch jobs from SerpApi (Network/other error):', error);
     return generateDynamicMockResults(input, `Failed to connect to SerpApi. ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -143,7 +145,7 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
   const companies = ["Innovatech Solutions", "FutureAI Dynamics", "CyberSec Corp Ltd.", "GreenLeaf Organics", "Quantum Leap AI"];
   const jobTypes = ["Full-time", "Contract", "Part-time", "Internship"];
 
-  const numToGenerate = Math.min(input.numResults ?? 3, 3);
+  const numToGenerate = Math.min(input.numResults ?? 3, 3); // Generate fewer mocks
 
   for (let i = 0; i < numToGenerate ; i++) {
     const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", "internship", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
@@ -182,6 +184,7 @@ export const searchJobsTool = ai.defineTool(
     outputSchema: JobSearchOutputSchema,
   },
   async (input) => {
+    // Cap the number of results requested from the API to a reasonable limit (e.g., 10-15)
     const cappedInput = { ...input, numResults: Math.min(input.numResults ?? 10, 15) };
     return fetchJobsFromSerpApi(cappedInput);
   }
