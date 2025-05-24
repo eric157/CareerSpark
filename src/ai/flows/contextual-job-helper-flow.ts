@@ -3,7 +3,7 @@
  * @fileOverview A Genkit flow that uses RAG to answer user questions.
  *
  * It retrieves relevant context using a tool and then prompts an LLM
- * to answer the user's question based on that context.
+ * to answer the user's question based on that context and its general knowledge.
  *
  * Exports:
  * - contextualJobHelper - The main function to trigger the RAG flow.
@@ -23,7 +23,7 @@ export type ContextualJobHelperInput = z.infer<typeof ContextualJobHelperInputSc
 
 // Output Schema
 const ContextualJobHelperOutputSchema = z.object({
-  answer: z.string().describe('The AI-generated answer to the user\'s query, based on retrieved context.'),
+  answer: z.string().describe('The AI-generated answer to the user\'s query, based on retrieved context and general knowledge.'),
   retrievedContextItems: z.array(z.string()).optional().describe('Snippets of context retrieved and used by the LLM.'),
 });
 export type ContextualJobHelperOutput = z.infer<typeof ContextualJobHelperOutputSchema>;
@@ -45,9 +45,11 @@ const contextualHelpPrompt = ai.definePrompt({
     }) 
   },
   output: { schema: ContextualJobHelperOutputSchema },
-  prompt: `You are a helpful Career Advisor AI. Your task is to answer the user's question based *primarily* on the provided context snippets.
-If the provided context does not contain enough information to answer the question, state that you don't have specific information on that topic from the provided documents and offer a general piece of advice if appropriate.
-Do not make up information not present in the context.
+  prompt: `You are an expert Career Advisor AI. Your task is to provide a comprehensive and helpful answer to the user's question.
+Use the provided context snippets as a starting point or to supplement your answer.
+If the snippets directly address part of the question, prioritize using that information and integrate it smoothly into your overall response.
+If the snippets are not very relevant or don't fully cover the question, rely more on your general knowledge to give a thorough and detailed response.
+Ensure your answer is well-structured, easy to understand, and directly addresses the user's query.
 
 Provided Context Snippets:
 {{#if retrievedSnippets.length}}
@@ -55,7 +57,7 @@ Provided Context Snippets:
   - {{{this}}}
   {{/each}}
 {{else}}
-  (No specific context snippets were retrieved for this query.)
+  (No specific context snippets were retrieved for this query, or they were not deemed highly relevant by the retrieval system.)
 {{/if}}
 
 User's Question: {{{userQuery}}}
