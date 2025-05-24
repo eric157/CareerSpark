@@ -3,7 +3,7 @@
 'use server';
 
 /**
- * @fileOverview Recommends jobs to a user based on their resume and preferences using an agentic approach.
+ * @fileOverview Recommends jobs to a user based on their resume and chat query using SerpApi.
  *
  * - jobRecommendation - A function that handles the job recommendation process.
  * - JobRecommendationInput - The input type for the jobRecommendation function.
@@ -14,14 +14,14 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { searchJobsTool } from '@/ai/tools/job-search-tool';
 
+// Input: Just resume text and user's current query/preferences.
 const JobRecommendationInputSchema = z.object({
   resumeText: z.string().describe("The text content of the user's resume. This provides crucial context about skills, experience, and education."),
   userPreferences: z
     .string()
     .describe(
-      "A description of the user's immediate job search query or preferences, including desired roles, industries, keywords, and locations. This might be a direct query from a chat interface."
+      "A description of the user's immediate job search query or preferences from the chat interface (e.g., 'entry-level marketing roles in NYC', 'senior java developer remote')."
     ),
-  jobListings: z.array(z.string()).optional().describe('An optional list of pre-existing job listings to consider. If provided, these should be evaluated first.'),
 });
 export type JobRecommendationInput = z.infer<typeof JobRecommendationInputSchema>;
 
@@ -30,7 +30,7 @@ const RecommendedJobSchema = z.object({
   title: z.string().describe('The title of the job.'),
   company: z.string().describe('The company offering the job.'),
   location: z.string().describe('The location of the job. If not specified or known, use a general term like "Various locations" or "Not specified", but always include the field.'),
-  summary: z.string().describe('A concise, AI-generated summary (2-3 sentences) explaining specifically why this job is a good match for the user, referencing their resume skills/experience and stated preferences.'),
+  summary: z.string().describe('A concise, AI-generated summary (2-3 sentences) explaining specifically why this job is a good match for the user, referencing their resume skills/experience and stated preferences. Make this compelling and personalized.'),
   description: z.string().describe('The full job description obtained from the source. This can be the same as the summary if a more detailed description is not available from the source.'),
   relevanceScore: z
     .number()
@@ -38,8 +38,8 @@ const RecommendedJobSchema = z.object({
     .describe(
       'A score (0-100) indicating how relevant the job is to the user\'s comprehensive profile (resume + preferences). Higher scores mean better alignment.'
     ),
-  source: z.string().optional().describe("Indicates if the job was from 'providedListings' or 'webSearch' (if found via searchJobsTool). Omit if not applicable."),
-  url: z.string().url().optional().describe("URL to the job posting, if available (e.g., from web search). Omit this field if no URL is available from the source."),
+  source: z.string().default("webSearch").describe("Indicates the job was found via 'webSearch' using the searchJobsTool."),
+  url: z.string().url().optional().describe("URL to the job posting. Omit this field if no URL is available from the source."),
   postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). This must be a string if provided. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). This must be a string if provided. Omit this field entirely if not available as a string from the source or if it\'s null. Do not use `null`.')
 });
@@ -48,9 +48,8 @@ const JobRecommendationOutputSchema = z.object({
   recommendedJobs: z
     .array(RecommendedJobSchema)
     .describe('A list of up to 5 highly relevant jobs recommended to the user, with detailed justifications and relevance scores.'),
-  searchQueryUsed: z.string().optional().describe("If the 'searchJobsTool' was used, this is the exact query that was constructed and used for the search. Omit this field entirely if the 'searchJobsTool' was not used."),
-  reasoningForSearch: z.string().optional().describe("If the 'searchJobsTool' was used, briefly explain how the search query was derived from the resume and user preferences. Omit if tool not used."),
-  noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit if results were found or no search was performed.")
+  searchQueryUsed: z.string().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit if the tool was not used or no query was formed."),
+  noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit if results were found.")
 });
 export type JobRecommendationOutput = z.infer<typeof JobRecommendationOutputSchema>;
 
@@ -63,7 +62,7 @@ const jobRecommendationPrompt = ai.definePrompt({
   input: {schema: JobRecommendationInputSchema},
   output: {schema: JobRecommendationOutputSchema},
   tools: [searchJobsTool],
-  prompt: `You are an expert AI Career Advisor. Your primary goal is to provide highly relevant job recommendations (up to 5) to the user based on their resume and stated preferences.
+  prompt: `You are an AI Career Advisor. Your goal is to provide up to 5 highly relevant job recommendations using the 'searchJobsTool'.
 
 User's Resume Details:
 {{resumeText}}
@@ -71,54 +70,42 @@ User's Resume Details:
 User's Stated Preferences / Current Search Query:
 {{userPreferences}}
 
-{{#if jobListings}}
-Consider these provided Job Listings first:
-{{#each jobListings}}
-- Job Content: {{{this}}} (Source: providedListings)
-{{/each}}
-{{else}}
-No specific job listings were initially provided by the user.
-{{/if}}
+Your Task:
 
-Your Task (Follow these steps meticulously):
+1.  **Analyze User Input:**
+    *   Carefully review the 'resumeText' for key skills, experiences, and career trajectory.
+    *   Interpret the 'userPreferences' (their chat query) for desired roles, industries, locations, or job types.
 
-1.  **Understand the User:**
-    *   Thoroughly analyze the 'resumeText' to identify key skills, past roles, experiences, and education.
-    *   Analyze 'userPreferences' for immediate search keywords, desired roles, industries, locations, or job types.
+2.  **Formulate Search Query for 'searchJobsTool':**
+    *   Based on your analysis, construct an OPTIMAL search query string for the 'searchJobsTool'. This query MUST be a synthesis of the user's chat query ('userPreferences') AND key elements extracted from their 'resumeText'.
+    *   For example, if 'userPreferences' is "remote marketing jobs" and 'resumeText' mentions "social media management" and "SEO", a good query for the tool might be "remote social media marketing SEO jobs".
+    *   Extract a potential location from 'userPreferences' to pass to the tool's location parameter. If no location is specified, you can omit it for the tool.
+    *   Record the exact query you use in the 'searchQueryUsed' field of your output. If you cannot form a meaningful query or decide not to search, omit 'searchQueryUsed'.
 
-2.  **Search Strategy (If Necessary):**
-    *   Evaluate if the 'jobListings' (if provided) are sufficient and relevant.
-    *   If no 'jobListings' are provided, OR if the provided ones are insufficient or not highly relevant to the user's overall profile (resume + preferences), YOU MUST use the 'searchJobsTool' to find suitable job openings.
-    *   **Constructing the Search Query:** If you decide to use 'searchJobsTool':
-        *   Formulate an OPTIMAL search query string for the tool. This query should be a synthesis of the most important keywords/roles from 'userPreferences' AND key skills/job titles from 'resumeText'. For example, if preferences are "entry-level marketing" and resume shows "graphic design, social media", a good query might be "entry-level marketing social media graphic design".
-        *   Consider location from 'userPreferences' for the tool's location parameter. If no location is specified, you can omit it or use a general term if appropriate for the role types.
-        *   Record the exact query you use in the 'searchQueryUsed' field of your output.
-        *   Briefly explain your reasoning for this query in the 'reasoningForSearch' field.
-        *   If you do not use the 'searchJobsTool', omit 'searchQueryUsed' and 'reasoningForSearch' entirely from the output.
-
-3.  **Evaluate and Select Jobs:**
-    *   From ALL available sources (provided 'jobListings' AND/OR results from 'searchJobsTool'), select up to 5 of the MOST RELEVANT jobs.
-    *   **Deep Evaluation Criteria:** For each potential job:
-        *   **Skill Match:** Compare required/desired skills in the job description against skills in 'resumeText'.
-        *   **Experience Alignment:** Assess if the job's experience level aligns with the user's background.
-        *   **Preference Fit:** Check against 'userPreferences' (role types, industry, location, keywords).
-        *   **Job Details:** Note the 'postedDate' (prefer more recent if available) and 'employmentType'.
+3.  **Execute Search & Evaluate Results:**
+    *   Use the 'searchJobsTool' with your formulated query.
+    *   From the search results, select up to 5 of the MOST RELEVANT jobs.
+    *   **Evaluation Criteria for Each Job:**
+        *   **Skill & Experience Match:** How well do the job requirements align with the 'resumeText'?
+        *   **Preference Fit:** Does it match the 'userPreferences' (role, industry, location, type)?
+        *   **Job Details:** Consider recency (if 'postedDate' is available) and 'employmentType'.
 
 4.  **Format Output for Each Recommended Job:**
-    *   For each of the selected top 5 jobs, populate ALL fields in the 'RecommendedJobSchema' based on the source information (either the provided listing or the 'searchJobsTool' output).
-    *   'id': Use the unique identifier from the source (e.g., tool's 'id', or generate one if processing a raw provided listing).
-    *   'title', 'company', 'location', 'description': Directly from the source. The 'description' should be the full job description.
-    *   'summary': This is CRITICAL. Write a concise (2-3 sentences) and personalized summary explaining EXACTLY WHY this job is a strong match. Refer to specific skills/experiences from the user's 'resumeText' and elements from 'userPreferences' that align with the job. For example: "This Senior Developer role at TechCorp aligns with your extensive Java experience and preference for remote work in the fintech sector."
-    *   'relevanceScore': Assign a score from 0 to 100, reflecting your comprehensive analysis of the match. A higher score means a stronger, more multi-faceted match.
-    *   'source': Indicate 'providedListings' or 'webSearch'.
-    *   'url': Provide the URL if the job came from 'searchJobsTool' and a URL is available. Omit this field if not available.
-    *   'postedDate', 'employmentType': If these are available AS STRINGS from the source, include them. If they are not available, are null, or are not strings, OMIT these fields entirely for that job. DO NOT use 'null'.
+    *   For each selected job, populate ALL fields in the 'RecommendedJobSchema'.
+    *   'id': Use the unique identifier from the search tool.
+    *   'title', 'company', 'location', 'description': Directly from the search tool's output.
+    *   'summary': CRITICAL. Write a concise (2-3 sentences), personalized summary explaining EXACTLY WHY this job is a strong match for THIS user. Refer to specific skills/experiences from 'resumeText' and elements from 'userPreferences'. Example: "This Senior Developer role at TechCorp aligns with your 7 years of Java backend experience and preference for remote fintech positions mentioned in your resume and query."
+    *   'relevanceScore': Assign a score from 0-100.
+    *   'source': This should always be 'webSearch' as you are using the tool.
+    *   'url': Provide the URL from the search tool. Omit if not available.
+    *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool, include them. If they are not available, are null, or are not strings, OMIT these fields entirely. DO NOT use 'null'.
 
-5.  **Handling No/Poor Results from Search:**
-    *   If you used 'searchJobsTool' but it returned no results, or the results were of very low relevance even after your analysis, return an empty 'recommendedJobs' array.
-    *   In this specific case (search performed, no good results), provide a helpful message in the 'noResultsFeedback' field. For example: "My search for 'senior quantum physicist in rural Alaska' based on your profile didn't find matching roles. You might consider broadening your location or role type." Omit this field if you found good jobs or didn't perform a search.
+5.  **Handling No/Poor Results:**
+    *   If the 'searchJobsTool' returns no results, or the results are of very low relevance, return an empty 'recommendedJobs' array.
+    *   In this case, provide a helpful message in the 'noResultsFeedback' field (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills."). Omit 'noResultsFeedback' if you found good jobs.
 
 Output MUST strictly adhere to 'JobRecommendationOutputSchema'.
+If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search.
 `,
 });
 

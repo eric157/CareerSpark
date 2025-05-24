@@ -5,22 +5,25 @@ import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'; // Removed AvatarImage as AI doesn't have one
-import { Paperclip, SendHorizonal, User, Cpu, Search } from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Paperclip, SendHorizonal, User, Cpu, Search, AlertTriangle, Info } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation'; 
 import { Skeleton } from '@/components/ui/skeleton';
-import Image from 'next/image'; // For job card images
+import Image from 'next/image';
+import { Alert, AlertDescription } from '@/components/ui/alert'; // Added Alert
+
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string>("Seeking opportunities. Please upload resume for personalized results.");
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   useEffect(() => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
@@ -29,9 +32,15 @@ export default function ChatInterface() {
         const data = JSON.parse(storedResumeData);
         const text = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
         setParsedResumeText(text);
+        setResumeError(null);
       } catch (e) {
         console.error("Failed to parse resume data from localStorage", e);
+        setParsedResumeText(""); // Set to empty string to indicate an issue
+        setResumeError("Could not load your resume data. Please try re-uploading.");
       }
+    } else {
+      setParsedResumeText(""); // Set to empty string if no resume is uploaded
+      // No error message initially, will prompt in chat
     }
   }, []);
 
@@ -63,20 +72,40 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
+    if (parsedResumeText === null) { // Still loading resume
+        const loadingResumeMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: 'ai',
+            text: "Checking for your resume...",
+            timestamp: new Date(),
+        };
+        setMessages((prevMessages) => [...prevMessages, loadingResumeMsg]);
+        setIsLoading(false);
+        return;
+    }
+
+    if (!parsedResumeText) {
+        const noResumeMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: 'ai',
+            text: "I couldn't find your resume details. Please upload your resume first for personalized job recommendations. You can do that [here](/upload-resume).",
+            timestamp: new Date(),
+        };
+        setMessages((prevMessages) => [...prevMessages, noResumeMsg]);
+        setIsLoading(false);
+        return;
+    }
+
+
     try {
       const aiResponse = await jobRecommendation({
         resumeText: parsedResumeText, 
         userPreferences: userMessage.text,
-        jobListings: undefined, // No longer passing mock listings
       });
       
       let responseText = aiResponse.recommendedJobs.length > 0 
-        ? "Here are some job recommendations based on your query:" 
-        : "I couldn't find specific jobs for that query right now using web search. Try rephrasing or broadening your search. Ensure your resume is uploaded for best results.";
-
-      if (aiResponse.searchQueryUsed) {
-        responseText += ` (I searched for: "${aiResponse.searchQueryUsed}")`;
-      }
+        ? "Here are some job recommendations based on your query and resume:" 
+        : (aiResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
 
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -85,15 +114,17 @@ export default function ChatInterface() {
         timestamp: new Date(),
         relatedJobs: aiResponse.recommendedJobs,
         searchQueryUsed: aiResponse.searchQueryUsed,
+        noResultsFeedback: aiResponse.noResultsFeedback,
       };
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
     } catch (error) {
       console.error("Error processing message:", error);
+      const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred.";
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: "Sorry, I encountered an error trying to process your request. Please ensure your resume is uploaded or try again.",
+        text: `Sorry, I encountered an error: ${errorMessageText}. Please try again.`,
         timestamp: new Date(),
       };
       setMessages((prevMessages) => [...prevMessages, errorMessage]);
@@ -111,6 +142,21 @@ export default function ChatInterface() {
       </CardHeader>
       <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
         <div className="space-y-6">
+          {resumeError && (
+             <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{resumeError} <Link href="/upload-resume" className="font-bold hover:underline">Upload again?</Link></AlertDescription>
+            </Alert>
+          )}
+          {parsedResumeText === "" && !resumeError && messages.length === 0 && ( // Only show if no other messages and not yet loading
+            <Alert className="mb-4">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Welcome! <Link href="/upload-resume" className="font-bold hover:underline">Upload your resume</Link> to get started with personalized job recommendations.
+                Or, ask a general question about job searching.
+              </AlertDescription>
+            </Alert>
+          )}
           {messages.map((message) => (
             <div
               key={message.id}
@@ -136,12 +182,16 @@ export default function ChatInterface() {
                     <Search size={12}/> Searched for: "{message.searchQueryUsed}"
                   </p>
                 )}
+                {/* Display noResultsFeedback if it exists and there are no jobs */}
+                {message.noResultsFeedback && (!message.relatedJobs || message.relatedJobs.length === 0) && (
+                  <p className="text-xs text-muted-foreground mt-1">{message.noResultsFeedback}</p>
+                )}
                 {message.relatedJobs && message.relatedJobs.length > 0 && (
                   <div className="mt-3 space-y-2">
                     {message.relatedJobs.map((job, index) => {
                        const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
                        const placeholderImageUrl = `https://placehold.co/40x40.png?text=${encodeURIComponent(companyInitials)}`;
-                       const dataAiHintForPlaceholder = job.company?.split(' ')[0]?.toLowerCase() || "company logo";
+                       const dataAiHintForPlaceholder = job.company?.split(' ')[0]?.toLowerCase() || "company";
                        
                        return (
                        <Card key={job.id || index} className="bg-background/70 p-3">
@@ -161,15 +211,15 @@ export default function ChatInterface() {
                         <p className="text-xs mt-1 line-clamp-2">{job.summary}</p>
                         <div className="flex justify-between items-center mt-1">
                           <Badge variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} className="text-xs">Relevance: {job.relevanceScore}%</Badge>
-                          {job.source && <Badge variant="outline" className="text-xs capitalize">{job.source === "webSearch" ? "Web Search" : "Provided"}</Badge>}
+                           {job.postedDate && <Badge variant="outline" className="text-xs">{job.postedDate}</Badge>}
                         </div>
                         {job.url ? (
-                           <a href={job.url} target="_blank" rel="noopener noreferrer">
-                             <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Original Post</Button>
+                           <a href={job.url} target="_blank" rel="noopener noreferrer" className="block mt-1">
+                             <Button variant="link" size="sm" className="p-0 h-auto text-primary text-xs">View Original Post</Button>
                            </a>
                         ) : (
-                           <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || '')}`} passHref>
-                             <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Details</Button>
+                           <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || '')}`} passHref className="block mt-1">
+                             <Button variant="link" size="sm" className="p-0 h-auto text-primary text-xs">Search on Jobs Page</Button>
                            </Link>
                         )}
                       </Card>
@@ -178,7 +228,7 @@ export default function ChatInterface() {
                   </div>
                 )}
                 <p className="mt-1 text-xs opacity-70">
-                  {message.timestamp.toLocaleTimeString()}
+                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
               {message.sender === 'user' && (
@@ -205,19 +255,19 @@ export default function ChatInterface() {
       </ScrollArea>
       <CardFooter className="p-4 border-t">
         <form onSubmit={handleSubmit} className="flex w-full items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" className="shrink-0" title="Attach resume (feature coming soon)" disabled>
+          <Button variant="ghost" size="icon" type="button" className="shrink-0" title="Attach file (feature coming soon)" disabled>
             <Paperclip className="h-5 w-5" />
             <span className="sr-only">Attach file</span>
           </Button>
           <Input
             type="text"
-            placeholder="e.g., 'Find remote React jobs' or 'Entry level marketing roles'"
+            placeholder={parsedResumeText === "" && !resumeError ? "Upload resume for job search or ask a general question..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="flex-1"
-            disabled={isLoading}
+            disabled={isLoading || parsedResumeText === null}
           />
-          <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()} className="shrink-0">
+          <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim() || parsedResumeText === null} className="shrink-0">
             <SendHorizonal className="h-5 w-5" />
             <span className="sr-only">Send message</span>
           </Button>

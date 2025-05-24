@@ -12,13 +12,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle, Sparkles } from 'lucide-react';
-import type { RecommendedJob } from '@/types'; // Changed from JobListing
+import type { RecommendedJob } from '@/types';
 import { generatePersonalizedExplanation, type PersonalizedExplanationOutput } from '@/ai/flows/personalized-explanation';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
 interface PersonalizedExplanationDialogProps {
-  job: RecommendedJob; // Changed from JobListing
+  job: RecommendedJob; 
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -27,27 +27,39 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
   const [explanationData, setExplanationData] = useState<PersonalizedExplanationOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen && job) {
+    // Load resume data once when component might become active or props change
+    const storedResumeData = localStorage.getItem('parsedResumeData');
+    if (storedResumeData) {
+      try {
+        const data = JSON.parse(storedResumeData);
+        const text = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
+        setParsedResumeText(text);
+      } catch (e) {
+        console.error("Failed to parse resume data for explanation dialog", e);
+        setParsedResumeText("Could not load resume data."); // Fallback
+      }
+    } else {
+      setParsedResumeText("No resume data found in profile."); // Fallback
+    }
+  }, []); // Empty dependency to run once or add dependencies if it needs to re-fetch
+
+  useEffect(() => {
+    if (isOpen && job && parsedResumeText !== null) { // Ensure resume text is loaded
       const fetchExplanation = async () => {
         setIsLoading(true);
         setError(null);
         setExplanationData(null);
 
         try {
-          const storedResumeData = localStorage.getItem('parsedResumeData');
-          const resumeData = storedResumeData 
-            ? JSON.parse(storedResumeData) 
-            : { skills: [], experience: [], education: [] };
+          // User preferences can be generic or fetched if available from another source
+          const userPreferences = "User is actively looking for relevant roles."; 
           
-          const resumeString = `Skills: ${resumeData.skills?.join(', ') || 'Not specified'}. Experience: ${resumeData.experience?.join('; ') || 'Not specified'}. Education: ${resumeData.education?.join('; ') || 'Not specified'}.`;
-          
-          const userPreferences = "Interested in senior frontend roles, remote work, and innovative tech companies."; // This could be dynamic
-
           const result = await generatePersonalizedExplanation({
-            resumeData: resumeString,
-            jobDescription: job.description, // RecommendedJob now has description
+            resumeData: parsedResumeText, // Use the state variable
+            jobDescription: job.description || job.summary, // Use description, fallback to summary
             userPreferences: userPreferences,
           });
           setExplanationData(result);
@@ -60,7 +72,7 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
       };
       fetchExplanation();
     }
-  }, [isOpen, job]);
+  }, [isOpen, job, parsedResumeText]); // Depend on parsedResumeText
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -71,7 +83,7 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
             Personalized Match Explanation
           </DialogTitle>
           <DialogDescription>
-            AI-powered insights on why "{job.title}" at {job.company} could be a great fit for you.
+            AI-powered insights on why "{job.title}" at {job.company} could be a great fit for you, based on your resume.
           </DialogDescription>
         </DialogHeader>
         
@@ -89,10 +101,15 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
               <p>{error}</p>
             </div>
           )}
+          {parsedResumeText === "No resume data found in profile." && !isLoading && !error && (
+             <div className="text-center text-muted-foreground p-4">
+                Please <a href="/upload-resume" className="text-primary hover:underline">upload your resume</a> to get a personalized explanation.
+            </div>
+          )}
           {explanationData && (
             <div className="space-y-4">
               <div className="flex flex-col items-center space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">Relevancy Score</p>
+                <p className="text-sm font-medium text-muted-foreground">AI Relevancy Score</p>
                 <div className="w-full max-w-xs text-center">
                    <Progress value={explanationData.relevancyScore} className="h-3 mb-1" />
                    <Badge variant={explanationData.relevancyScore > 70 ? "default" : explanationData.relevancyScore > 40 ? "secondary" : "destructive"} className="text-lg font-bold">
@@ -109,7 +126,7 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
               
               <div className="mt-4 p-4 border-t">
                  <h4 className="font-semibold text-md mb-2 text-foreground">Job Details Considered:</h4>
-                 <p className="text-sm text-muted-foreground line-clamp-4">{job.description}</p>
+                 <p className="text-sm text-muted-foreground line-clamp-4">{job.description || job.summary}</p>
               </div>
 
             </div>
@@ -125,4 +142,3 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
     </Dialog>
   );
 }
-

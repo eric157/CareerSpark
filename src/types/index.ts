@@ -1,17 +1,16 @@
 
-
 import type { ParseResumeOutput } from "@/ai/flows/resume-parsing";
 import type { JobRecommendationOutput } from "@/ai/flows/job-recommendation";
 
 export type ParsedResumeData = ParseResumeOutput;
 
 // This is the primary type for job data used across the UI, 
-// now directly derived from the AI flow's output structure.
+// directly derived from the AI flow's output structure.
 export type RecommendedJob = JobRecommendationOutput["recommendedJobs"][number];
 
-
-// The JobListing type can be kept for reference or potential future use if needed,
-// but RecommendedJob is now the main type for dynamically fetched jobs.
+// This type is now redundant as RecommendedJob is sourced from the AI flow which uses searchJobsTool's output.
+// Keeping it commented out for a short while for reference, then can be fully deleted.
+/*
 export interface JobListing {
   id: string;
   title: string;
@@ -22,14 +21,14 @@ export interface JobListing {
   url?: string;
   postedDate?: string;
   employmentType?: string;
-  salaryRange?: string; // This field is not reliably provided by SerpApi or current flows.
-  imageUrl?: string;    // This field is not provided by SerpApi or current flows.
-  dataAihint?: string;  // This field is not provided by SerpApi or current flows.
-  relevancyScore?: number; // This is part of RecommendedJob.
-  personalizedExplanation?: string; // This is generated on demand.
-  source?: string; // This is part of RecommendedJob.
+  salaryRange?: string; 
+  imageUrl?: string;    
+  dataAihint?: string;  
+  relevancyScore?: number; 
+  personalizedExplanation?: string; 
+  source?: string; 
 }
-
+*/
 
 export interface ChatMessage {
   id: string;
@@ -38,5 +37,5 @@ export interface ChatMessage {
   timestamp: Date;
   relatedJobs?: RecommendedJob[]; 
   searchQueryUsed?: string; 
+  noResultsFeedback?: string; // Added to display feedback from AI
 }
-

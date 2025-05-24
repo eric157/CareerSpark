@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { RecommendedJob } from '@/types'; // Changed from JobListing
+import type { RecommendedJob } from '@/types';
 import JobCard from './JobCard';
 import { useState } from 'react';
 import PersonalizedExplanationDialog from './PersonalizedExplanationDialog';
@@ -9,13 +9,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
 
 interface JobListProps {
-  jobs: RecommendedJob[]; // Changed from JobListing
+  jobs: RecommendedJob[];
+  initialEmptyMessage?: string | null; // To display feedback from AI flow if no jobs
 }
 
-export default function JobList({ jobs }: JobListProps) {
-  const [selectedJobForExplanation, setSelectedJobForExplanation] = useState<RecommendedJob | null>(null); // Changed from JobListing
+export default function JobList({ jobs, initialEmptyMessage }: JobListProps) {
+  const [selectedJobForExplanation, setSelectedJobForExplanation] = useState<RecommendedJob | null>(null);
 
-  const handleViewExplanation = (job: RecommendedJob) => { // Changed from JobListing
+  const handleViewExplanation = (job: RecommendedJob) => {
     setSelectedJobForExplanation(job);
   };
 
@@ -23,9 +24,9 @@ export default function JobList({ jobs }: JobListProps) {
     return (
       <Alert>
         <Info className="h-4 w-4" />
-        <AlertTitle>No Jobs Found</AlertTitle>
+        <AlertTitle>{initialEmptyMessage ? "Search Feedback" : "No Jobs Found"}</AlertTitle>
         <AlertDescription>
-          We couldn't find any jobs matching your criteria at the moment. Try adjusting your filters or check back later.
+          {initialEmptyMessage || "We couldn't find any jobs matching your current criteria. Try adjusting your filters or check back later."}
         </AlertDescription>
       </Alert>
     );
@@ -50,4 +51,3 @@ export default function JobList({ jobs }: JobListProps) {
     </div>
   );
 }
-
