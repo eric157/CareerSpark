@@ -26,7 +26,7 @@ const JobRecommendationInputSchema = z.object({
 export type JobRecommendationInput = z.infer<typeof JobRecommendationInputSchema>;
 
 const RecommendedJobSchema = z.object({
-  id: z.string().describe('A unique identifier for the job listing, derived from its source (e.g., SerpApi job_id).'),
+  id: z.string().describe("A unique identifier for the job listing, derived directly from the 'id' field of a result from 'searchJobsTool'. This field is CRITICAL and MUST be the exact ID provided by the tool for the corresponding job. DO NOT use 'unknown', placeholders, or invent IDs."),
   title: z.string().describe('The title of the job.'),
   company: z.string().describe('The company offering the job.'),
   location: z.string().describe('The location of the job. If not specified or known, use a general term like "Various locations" or "Not specified", but always include the field.'),
@@ -92,8 +92,8 @@ Your Task:
 
 4.  **Format Output for Each Recommended Job:**
     *   For each selected job, populate ALL fields in the 'RecommendedJobSchema'.
-    *   'id': Use the unique identifier from the search tool.
-    *   'title', 'company', 'location', 'description': Directly from the search tool's output.
+    *   **'id': CRITICAL! This MUST be the exact, non-empty string identifier provided by the 'searchJobsTool' for this specific job (from the tool's 'id' field in its output). DO NOT invent IDs, use placeholders like 'unknown', or leave it blank. If the tool did not provide an ID for a job you are considering, you should probably discard that job result.**
+    *   'title', 'company', 'location', 'description': Directly from the search tool's output for the corresponding job.
     *   'summary': CRITICAL. Write a concise (2-3 sentences), personalized summary explaining EXACTLY WHY this job is a strong match for THIS user. Refer to specific skills/experiences from 'resumeText' and elements from 'userPreferences'. Example: "This Senior Developer role at TechCorp aligns with your 7 years of Java backend experience and preference for remote fintech positions mentioned in your resume and query."
     *   'relevanceScore': Assign a score from 0-100.
     *   'source': This should always be 'webSearch' as you are using the tool.
