@@ -4,13 +4,13 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+// Removed unused Label import: import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, AlertTriangle, Loader2, ListChecks, Briefcase, GraduationCap } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Loader2, ListChecks, Briefcase, GraduationCap, UploadCloud } from 'lucide-react';
 import { parseResume, type ParseResumeOutput } from '@/ai/flows/resume-parsing';
 import { useToast } from '@/hooks/use-toast';
 
@@ -88,7 +88,7 @@ export default function ResumeUploadForm() {
         } catch (aiError) {
           console.error('AI parsing error:', aiError);
           setError('Failed to parse resume. Please try again or use a different file.');
-          setUploadProgress(0);
+          setUploadProgress(0); // Reset progress on AI error
           toast({
             title: "Parsing Error",
             description: "There was an issue parsing your resume. Please check the file and try again.",
@@ -96,6 +96,8 @@ export default function ResumeUploadForm() {
           });
         } finally {
           setIsLoading(false);
+          // No need to reset progress here if successful, it should stay 100
+          // If an error occurred *before* parsing (e.g. reading file), isLoading would be set to false and progress might not be 100
         }
       };
       reader.onerror = () => {
@@ -115,19 +117,39 @@ export default function ResumeUploadForm() {
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <Label htmlFor="resumeFile" className="block text-sm font-medium text-foreground mb-1.5">Select Resume File</Label>
-          <Input
-            id="resumeFile"
-            type="file"
-            onChange={handleFileChange}
-            accept=".pdf,.docx"
-            className="mt-1 text-sm file:text-primary file:font-semibold file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary/10 hover:file:bg-primary/20 transition-colors duration-200 shadow-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
-            disabled={isLoading}
-          />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Supported formats: PDF, DOCX. Max size: {MAX_FILE_SIZE_MB}MB.
-          </p>
+          <label
+            htmlFor="resumeFile"
+            className={`relative flex flex-col items-center justify-center w-full p-4 mt-1 border-2 border-dashed rounded-xl cursor-pointer transition-colors duration-200 group
+                        ${isLoading ? 'bg-muted/50 cursor-not-allowed' : 'bg-card hover:bg-primary/5 border-primary/30 hover:border-primary/50'}`}
+          >
+            <div className="flex flex-col items-center justify-center pt-3 pb-4 text-center">
+              <UploadCloud 
+                className={`w-10 h-10 mb-3 transition-colors ${isLoading ? 'text-muted-foreground' : 'text-primary/70 group-hover:text-primary'}`} 
+              />
+              <p className={`mb-2 text-sm ${isLoading ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+                <span className="font-semibold">Click to upload resume</span>
+              </p>
+              <p className={`text-xs ${isLoading ? 'text-muted-foreground/80' : 'text-muted-foreground/80'}`}>
+                PDF or DOCX (MAX. {MAX_FILE_SIZE_MB}MB)
+              </p>
+            </div>
+            <Input
+              id="resumeFile"
+              type="file"
+              onChange={handleFileChange}
+              accept=".pdf,.docx"
+              className="sr-only" 
+              disabled={isLoading}
+            />
+          </label>
+
+          {file && !isLoading && (
+            <div className="mt-3 text-sm text-foreground">
+              Selected: <span className="font-medium text-primary">{file.name}</span>
+            </div>
+          )}
         </div>
+
         {isLoading && (
           <div className="space-y-2 pt-2">
             <Progress value={uploadProgress} className="w-full h-2.5 rounded-full [&>div]:rounded-full" />
@@ -137,6 +159,7 @@ export default function ResumeUploadForm() {
             </p>
           </div>
         )}
+
         {error && (
           <Alert variant="destructive" className="mt-2 shadow-md">
             <AlertTriangle className="h-5 w-5" />
@@ -144,6 +167,7 @@ export default function ResumeUploadForm() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
         <Button 
           type="submit" 
           disabled={isLoading || !file} 
@@ -201,7 +225,7 @@ export default function ResumeUploadForm() {
                   {parsedData.experience.length > 0 ? (
                     parsedData.experience.map((exp, index) => (
                       <div key={index} className="p-3 border rounded-md bg-background/50 shadow-sm">
-                        <p className="font-medium text-foreground">{exp.split(" at ")[0]}</p> {/* Basic parsing */}
+                        <p className="font-medium text-foreground">{exp.split(" at ")[0]}</p> 
                         {exp.includes(" at ") && <p className="text-xs text-muted-foreground">{exp.split(" at ")[1]}</p>}
                       </div>
                     ))
@@ -219,7 +243,7 @@ export default function ResumeUploadForm() {
                   {parsedData.education.length > 0 ? (
                     parsedData.education.map((edu, index) => (
                        <div key={index} className="p-3 border rounded-md bg-background/50 shadow-sm">
-                        <p className="font-medium text-foreground">{edu.split(" from ")[0]}</p> {/* Basic parsing */}
+                        <p className="font-medium text-foreground">{edu.split(" from ")[0]}</p> 
                         {edu.includes(" from ") && <p className="text-xs text-muted-foreground">{edu.split(" from ")[1]}</p>}
                       </div>
                     ))
