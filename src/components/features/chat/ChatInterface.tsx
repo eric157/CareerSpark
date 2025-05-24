@@ -6,21 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Paperclip, SendHorizonal, User, Cpu, Search, AlertTriangle, ArrowDown, Eye } from 'lucide-react';
+import { SendHorizonal, User, Cpu, Search, AlertTriangle, ArrowDown, Eye, Info, MessageSquareQuestion } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
+import { contextualJobHelper } from '@/ai/flows/contextual-job-helper-flow'; // Import RAG flow
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import JobDetailModal from './JobDetailModal'; 
 import { useToast } from '@/hooks/use-toast';
 
 
-const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search today?";
-const INITIAL_PROMPT_TEXT = "Hello! Upload your resume using the form so I can assist you with personalized job recommendations.";
-const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page.";
+const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search or answer your career questions today?";
+const INITIAL_PROMPT_TEXT = "Hello! Upload your resume so I can assist you with personalized job recommendations and answer your career questions.";
+const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page. You can still ask general career questions.";
 
 
 export default function ChatInterface() {
@@ -28,7 +29,6 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  // null: not checked; "": checked, no valid resume; string: valid resume text
   const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); 
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -42,15 +42,14 @@ export default function ChatInterface() {
     setIsDetailModalOpen(true);
   };
 
-  const loadResumeData = (isInitialPageLoad: boolean = false) => {
+  const loadResumeData = (isInitialPageLoad: boolean = false, fromEvent: boolean = false) => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
     let resumeIsAvailable = false;
-    let newParsedResumeTextContent = ""; // Default to empty string (no valid resume)
+    let newParsedResumeTextContent = ""; 
 
     if (storedResumeData) {
       try {
         const data = JSON.parse(storedResumeData);
-        // Validate if essential fields are present and have content
         if (data && (
             (Array.isArray(data.skills) && data.skills.length > 0) || 
             (Array.isArray(data.experience) && data.experience.length > 0) ||
@@ -63,30 +62,28 @@ export default function ChatInterface() {
           console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
           setResumeError("Your stored resume data was invalid. Please re-upload.");
-          // newParsedResumeTextContent remains ""
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
         setResumeError("Could not load your resume data. Please re-upload.");
-        // newParsedResumeTextContent remains ""
       }
     } else { 
-      setResumeError(null); // No stored data, so no error related to loading it
-      // newParsedResumeTextContent remains ""
+      setResumeError(null); 
     }
     
     setParsedResumeText(newParsedResumeTextContent);
 
     setMessages(prevMessages => {
+      const uniqueInitialId = `ai-msg-initial-${Date.now()}`;
+      const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}`;
+
       if (isInitialPageLoad && prevMessages.length === 0) {
-        const uniqueId = `ai-msg-initial-${Date.now()}`;
-        return [{ id: uniqueId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
-      } else if (!isInitialPageLoad && resumeIsAvailable) { // Resume was just updated
+        return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
+      } else if (fromEvent && resumeIsAvailable) { 
         const lastMessage = prevMessages[prevMessages.length - 1];
-        if (!lastMessage || lastMessage.text !== RESUME_READY_TEXT) {
-          const uniqueId = `ai-msg-resume-ready-${Date.now()}`;
-          return [...prevMessages, { id: uniqueId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
+        if (!lastMessage || (lastMessage.text !== RESUME_READY_TEXT && lastMessage.text !== INITIAL_PROMPT_TEXT )) {
+          return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
       return prevMessages; 
@@ -95,7 +92,7 @@ export default function ChatInterface() {
 
 
   useEffect(() => {
-    loadResumeData(true); // Initial load
+    loadResumeData(true, false); 
 
     const handleResumeUpdateEvent = () => {
       toast({
@@ -103,7 +100,7 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      loadResumeData(false); // Triggered by event (not initial page load)
+      loadResumeData(false, true); 
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -135,6 +132,13 @@ export default function ChatInterface() {
     }
   };
 
+  const isGeneralQuestion = (query: string): boolean => {
+    const q = query.toLowerCase().trim();
+    const questionKeywords = ["how", "what", "why", "explain", "tell me about", "can you"];
+    if (q.endsWith("?")) return true;
+    return questionKeywords.some(keyword => q.startsWith(keyword));
+  };
+
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -147,14 +151,13 @@ export default function ChatInterface() {
       timestamp: new Date(),
     };
     setMessages((prevMessages) => [...prevMessages, userMessage]);
+    const currentQuery = inputValue;
     setInputValue('');
     setIsLoading(true);
 
-    // Check if parsedResumeText is effectively empty (null, or empty string)
-    if (!parsedResumeText) { 
+    if (!parsedResumeText && !isGeneralQuestion(currentQuery)) { 
         setMessages(prev => {
             const lastMessage = prev[prev.length -1];
-            // Avoid duplicate warnings
             if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev; 
             return [...prev, {
                 id: `ai-err-no-resume-${Date.now()}`,
@@ -168,29 +171,46 @@ export default function ChatInterface() {
     }
 
     try {
-      const aiResponse = await jobRecommendation({
-        resumeText: parsedResumeText, // This will be an empty string if no valid resume
-        userPreferences: userMessage.text,
-      });
+      if (isGeneralQuestion(currentQuery)) {
+        // Route to RAG flow
+        const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
+        const aiMessage: ChatMessage = {
+          id: `ai-rag-resp-${Date.now()}`,
+          sender: 'ai',
+          text: aiRAGResponse.answer,
+          timestamp: new Date(),
+          retrievedContextItems: aiRAGResponse.retrievedContextItems,
+          isRAGResponse: true,
+        };
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
-      let responseText = aiResponse.recommendedJobs.length > 0
-        ? "Here are some job recommendations based on your query and resume:"
-        : (aiResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
+      } else {
+        // Route to Job Recommendation flow
+        const aiJobResponse = await jobRecommendation({
+          resumeText: parsedResumeText || "No resume provided.", // Pass empty if not available
+          userPreferences: currentQuery,
+        });
 
-      if (aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0) {
-        responseText = aiResponse.noResultsFeedback;
+        let responseText = aiJobResponse.recommendedJobs.length > 0
+          ? "Here are some job recommendations based on your query and resume:"
+          : (aiJobResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
+
+        if (aiJobResponse.noResultsFeedback && aiJobResponse.recommendedJobs.length === 0) {
+          responseText = aiJobResponse.noResultsFeedback;
+        }
+
+        const aiMessage: ChatMessage = {
+          id: `ai-job-resp-${Date.now()}`,
+          sender: 'ai',
+          text: responseText,
+          timestamp: new Date(),
+          relatedJobs: aiJobResponse.recommendedJobs,
+          searchQueryUsed: aiJobResponse.searchQueryUsed,
+          noResultsFeedback: aiJobResponse.noResultsFeedback && aiJobResponse.recommendedJobs.length === 0 ? aiJobResponse.noResultsFeedback : undefined,
+          isRAGResponse: false,
+        };
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
       }
-
-      const aiMessage: ChatMessage = {
-        id: `ai-resp-${Date.now()}`,
-        sender: 'ai',
-        text: responseText,
-        timestamp: new Date(),
-        relatedJobs: aiResponse.recommendedJobs,
-        searchQueryUsed: aiResponse.searchQueryUsed,
-        noResultsFeedback: aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0 ? aiResponse.noResultsFeedback : undefined,
-      };
-      setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
     } catch (error) {
       console.error("Error processing message with AI flow:", error);
@@ -211,13 +231,12 @@ export default function ChatInterface() {
       setIsLoading(false);
     }
   };
-
-  // Chat is disabled if loading, or if resume text is null (not checked) or "" (checked and no valid resume)
-  const isChatDisabled = isLoading || !parsedResumeText;
+  
+  const isChatInputDisabled = isLoading || (!parsedResumeText && messages.length > 1); // Disable if loading, or if no resume and initial AI message already sent
 
   return (
     <>
-      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-16rem)] sm:h-[calc(100vh-12rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card">
+      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-20rem)] sm:h-[calc(100vh-16rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card animate-fadeInUp" style={{animationDelay: '0.4s'}}>
         <CardHeader className="bg-primary/10 dark:bg-primary/20 border-b border-primary/20">
           <CardTitle className="text-xl font-semibold flex items-center gap-2 text-primary">
             <Cpu className="h-6 w-6" /> AI Career Assistant
@@ -228,13 +247,13 @@ export default function ChatInterface() {
             {resumeError && (
               <Alert variant="destructive" className="mb-4 shadow-md bg-destructive/10 border-destructive/30">
                 <AlertTriangle className="h-5 w-5 text-destructive" />
-                <AlertTitle className="text-destructive">Resume Error</AlertTitle>
+                <AlertTitle className="text-destructive font-semibold">Resume Error</AlertTitle>
                 <AlertDescription className="font-medium text-destructive/90">{resumeError}</AlertDescription>
               </Alert>
             )}
             {messages.map((message, msgIdx) => (
               <div
-                key={`${message.id}-${msgIdx}`} // Ensure key is unique even if IDs were to collide (unlikely with Date.now)
+                key={`${message.id}-${msgIdx}`}
                 className={`flex items-end gap-2.5 animate-fadeInUp`}
                 style={{ animationDelay: `${msgIdx * 0.05}s`}}
               >
@@ -251,6 +270,20 @@ export default function ChatInterface() {
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap break-words">{message.text}</p>
+                  
+                  {message.isRAGResponse && message.retrievedContextItems && message.retrievedContextItems.length > 0 && (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground italic flex items-center gap-1">
+                        <Info size={13} /> Based on {message.retrievedContextItems.length} retrieved snippets
+                      </summary>
+                      <ul className="list-disc pl-4 mt-1 space-y-1 opacity-80">
+                        {message.retrievedContextItems.map((item, idx) => (
+                          <li key={`context-${idx}`} className="break-words">{item}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+
                   {message.searchQueryUsed && (
                     <p className="text-xs opacity-80 mt-1.5 italic flex items-center gap-1">
                       <Search size={14}/> Searched for: "{message.searchQueryUsed}"
@@ -260,23 +293,27 @@ export default function ChatInterface() {
                   {message.relatedJobs && message.relatedJobs.length > 0 && (
                     <div className="mt-3 space-y-3">
                       {message.relatedJobs.map((job, index) => {
-                        const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
-                        const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials)}`;
+                         const companyNameWords = job.company?.split(' ') || [];
+                         let companyInitials = companyNameWords.length > 0 ? companyNameWords[0].substring(0,1) : "";
+                         if (companyNameWords.length > 1) companyInitials += companyNameWords[1].substring(0,1);
+                         if (!companyInitials) companyInitials = job.company?.substring(0,2) || '??';
+                         const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials.toUpperCase())}`;
                         
-                        let dataAiHintForPlaceholder = "company logo"; // Default hint
+                        let dataAiHintForPlaceholder = "company logo"; 
                         if (job.company) {
-                            const companyNameWords = job.company.split(' ');
-                            if (companyNameWords.length > 0) {
-                                const firstWord = companyNameWords[0].toLowerCase().replace(/[^a-z0-9]/gi, '');
+                            const words = job.company.split(' ');
+                            const firstWord = words[0]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
+                            if (firstWord) {
                                 dataAiHintForPlaceholder = firstWord.length > 15 ? firstWord.substring(0,15) : firstWord;
-                                if (companyNameWords.length > 1) {
-                                    const secondWord = companyNameWords[1].toLowerCase().replace(/[^a-z0-9]/gi, '');
-                                    const combinedHint = `${firstWord} ${secondWord}`;
-                                    if (combinedHint.length <= 20) dataAiHintForPlaceholder = combinedHint;
+                                if (words.length > 1) {
+                                    const secondWord = words[1]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
+                                    if (secondWord) {
+                                      const combinedHint = `${firstWord} ${secondWord}`;
+                                      if (combinedHint.length <= 20) dataAiHintForPlaceholder = combinedHint;
+                                    }
                                 }
                             }
                         }
-
 
                         return (
                         <Card 
@@ -371,20 +408,15 @@ export default function ChatInterface() {
         )}
         <CardFooter className="p-4 border-t bg-primary/10 dark:bg-primary/20 border-primary/20">
           <form onSubmit={handleSubmit} className="flex w-full items-center gap-3">
-            {/* Paperclip button can be re-enabled if file attachments to chat are implemented later */}
-            {/* <Button variant="ghost" size="icon" type="button" className="shrink-0 text-muted-foreground hover:text-primary" title="Attach file (feature coming soon)" disabled>
-              <Paperclip className="h-5 w-5" />
-              <span className="sr-only">Attach file</span>
-            </Button> */}
             <Input
               type="text"
-              placeholder={isChatDisabled ? "Upload your resume first..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
+              placeholder={isChatInputDisabled ? "Upload your resume first..." : "Ask a question or describe jobs you're looking for..."}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50 bg-background placeholder:text-muted-foreground/80"
-              disabled={isChatDisabled}
+              disabled={isChatInputDisabled}
             />
-            <Button type="submit" size="icon" disabled={isChatDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
+            <Button type="submit" size="icon" disabled={isChatInputDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
               <SendHorizonal className="h-5 w-5" />
               <span className="sr-only">Send message</span>
             </Button>
@@ -399,3 +431,4 @@ export default function ChatInterface() {
     </>
   );
 }
+
