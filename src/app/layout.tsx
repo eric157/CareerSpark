@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
+// import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'; // Removed
 import { Toaster } from '@/components/ui/toaster';
-import AppSidebar from '@/components/layout/AppSidebar';
+// import AppSidebar from '@/components/layout/AppSidebar'; // Removed
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -28,17 +28,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <SidebarProvider defaultOpen={true}>
-          <div className="flex min-h-screen bg-background">
-            <AppSidebar />
-            <SidebarInset className="flex-1 overflow-y-auto">
-              <main className="p-4 sm:p-6 lg:p-8 w-full">
-                {children}
-              </main>
-            </SidebarInset>
-          </div>
-          <Toaster />
-        </SidebarProvider>
+        <div className="flex min-h-screen flex-col bg-background">
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 w-full overflow-y-auto">
+            {children}
+          </main>
+        </div>
+        <Toaster />
       </body>
     </html>
   );
