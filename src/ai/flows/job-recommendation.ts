@@ -100,13 +100,12 @@ Your Task:
     *   'url': Provide the URL from the search tool. Omit this field if not available.
     *   'postedDate', 'employmentType': If these are available AS STRINGS from the search tool, include them. If they are not available, are null, or are not strings, OMIT these fields entirely. DO NOT use 'null'.
 
-5.  **Handling No/Poor Results:**
-    *   If the 'searchJobsTool' returns no results, or the results are of very low relevance, return an empty 'recommendedJobs' array.
-    *   In this case, provide a helpful message IN THE 'noResultsFeedback' FIELD (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills.").
-    *   IMPORTANT: If you ARE returning jobs in 'recommendedJobs', then you MUST OMIT the 'noResultsFeedback' field entirely from your output. Do not include it with a null or empty string value if jobs are found.
+5.  **Handling No/Poor Results & 'noResultsFeedback' Field:**
+    *   **If the 'recommendedJobs' array in your output will contain one or more jobs:** The 'noResultsFeedback' field MUST NOT BE PRESENT in your output. OMIT IT COMPLETELY. Do not include it with a 'null' or empty string value.
+    *   **If the 'recommendedJobs' array in your output will be empty (e.g., search tool returned no results, or results were irrelevant):** You SHOULD include the 'noResultsFeedback' field. Its value MUST be a string providing a helpful message to the user (e.g., "I couldn't find specific matches for '...' based on your resume. Try rephrasing your request or highlighting different skills.").
 
 Output MUST strictly adhere to 'JobRecommendationOutputSchema'.
-If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search, and in this case, use the 'noResultsFeedback' field.
+If the user's query is too vague and the resume provides little to go on, it's okay to state that you need more specific information or a resume upload to perform a good search; in this case, 'recommendedJobs' would be empty and you would use the 'noResultsFeedback' field.
 `,
 });
 
