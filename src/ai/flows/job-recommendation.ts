@@ -48,8 +48,8 @@ const JobRecommendationOutputSchema = z.object({
   recommendedJobs: z
     .array(RecommendedJobSchema)
     .describe('A list of up to 5 highly relevant jobs recommended to the user, with detailed justifications and relevance scores.'),
-  searchQueryUsed: z.string().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit this field if the tool was not used or no query was formed."),
-  noResultsFeedback: z.string().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit this field if results were found.")
+  searchQueryUsed: z.string().nullable().optional().describe("The exact query string that was constructed and used for the 'searchJobsTool'. Omit if the tool was not used or no query was formed."),
+  noResultsFeedback: z.string().nullable().optional().describe("If a search was performed but yielded no suitable results, provide a brief, helpful message here. e.g., 'Your search for X in Y did not yield many results. You could try broadening your criteria.' Omit if results were found.")
 });
 export type JobRecommendationOutput = z.infer<typeof JobRecommendationOutputSchema>;
 
@@ -119,11 +119,32 @@ const jobRecommendationFlow = ai.defineFlow(
   {
     name: 'jobRecommendationFlow',
     inputSchema: JobRecommendationInputSchema,
+    // The output schema for the flow itself (what callers of jobRecommendation get)
+    // will effectively be stricter because we transform nulls to undefined.
     outputSchema: JobRecommendationOutputSchema,
   },
   async (input) => {
-    const {output} = await jobRecommendationPrompt(input);
-    return output!;
+    const { output: llmOutput } = await jobRecommendationPrompt(input);
+
+    if (!llmOutput) {
+      // Handle the case where the LLM might return no output,
+      // though with a defined output schema, this should be rare.
+      // For now, let's ensure we return something that matches the schema,
+      // even if it's an empty recommendation list.
+      return { recommendedJobs: [] };
+    }
+
+    // Transform null to undefined for optional fields to match stricter external contract
+    if (llmOutput.searchQueryUsed === null) {
+      llmOutput.searchQueryUsed = undefined;
+    }
+    if (llmOutput.noResultsFeedback === null) {
+      llmOutput.noResultsFeedback = undefined;
+    }
+
+    return llmOutput;
   }
 );
 
+
+    
