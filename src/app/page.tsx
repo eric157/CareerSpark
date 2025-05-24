@@ -16,9 +16,11 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-        <div className="lg:col-span-2 space-y-8">
-          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300 animate-fadeInUp border-primary/20" style={{ animationDelay: '0.3s' }}>
+      {/* Single column layout */}
+      <div className="flex flex-col gap-10"> {/* Increased gap */}
+        {/* Section 1: Resume Upload & ATS View */}
+        <div className="animate-fadeInUp" style={{ animationDelay: '0.3s' }}>
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300 border-primary/20">
             <CardHeader>
               <CardTitle className="text-2xl font-semibold flex items-center gap-3 text-primary">
                  <UploadCloud className="h-7 w-7" />
@@ -34,7 +36,8 @@ export default function DashboardPage() {
           </Card>
         </div>
         
-        <div className="lg:col-span-3 animate-fadeInUp" style={{ animationDelay: '0.4s' }}>
+        {/* Section 2: Chat Interface */}
+        <div className="animate-fadeInUp" style={{ animationDelay: '0.4s' }}>
           <ChatInterface />
         </div>
       </div>

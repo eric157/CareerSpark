@@ -81,19 +81,23 @@ export default function ChatInterface() {
         } else {
           console.warn("Stored resume data is invalid or empty. Clearing from localStorage.");
           localStorage.removeItem('parsedResumeData');
-          if (!fromEvent) setResumeError("Your stored resume data was invalid. Please re-upload.");
-          newParsedResumeTextContent = ""; // Ensure it's empty
+          const errorMsg = "Your stored resume data was invalid or empty. Please re-upload.";
+          if (!fromEvent) setResumeError(errorMsg);
+          window.dispatchEvent(new CustomEvent('resumeUploadError', { detail: errorMsg }));
+          newParsedResumeTextContent = "";
           resumeIsAvailable = false;
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
-        if (!fromEvent) setResumeError("Could not load your resume data. Please re-upload.");
-        newParsedResumeTextContent = ""; // Ensure it's empty
+        const errorMsg = "Could not load your resume data from a previous session. Please re-upload.";
+        if (!fromEvent) setResumeError(errorMsg);
+        window.dispatchEvent(new CustomEvent('resumeUploadError', { detail: errorMsg }));
+        newParsedResumeTextContent = ""; 
         resumeIsAvailable = false;
       }
     } else {
-       if (!fromEvent) setResumeError(null); // Clear error if no data found and not from an event
+       if (!fromEvent) setResumeError(null); 
        newParsedResumeTextContent = "";
        resumeIsAvailable = false;
     }
@@ -103,16 +107,17 @@ export default function ChatInterface() {
         const uniqueInitialId = `ai-msg-initial-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        if (isInitialPageLoad && prevMessages.length === 0) {
+        if (isInitialPageLoad && prevMessages.length === 0) { // Only add initial prompt if chat is empty
             return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
         }
-        else if (fromEvent && resumeIsAvailable) {
+        else if (fromEvent && resumeIsAvailable) { // Triggered by resumeUpdated event
             const lastMessage = prevMessages[prevMessages.length - 1];
+             // Add resume ready text only if it's not already the last message and AI is not currently loading
             if (!isLoading && (!lastMessage || lastMessage.text !== RESUME_READY_TEXT)) {
                  return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
             }
         }
-        return prevMessages;
+        return prevMessages; // No change to messages
     });
   };
 
@@ -134,7 +139,7 @@ export default function ChatInterface() {
         const customEvent = event as CustomEvent<string>;
         setResumeError(customEvent.detail); 
         setParsedResumeText(""); 
-        localStorage.removeItem('parsedResumeData'); 
+        // localStorage.removeItem('parsedResumeData'); // Already handled in loadResumeData
          toast({
             title: "Resume Error",
             description: customEvent.detail,
@@ -181,7 +186,7 @@ export default function ChatInterface() {
     if (!inputValue.trim()) return;
 
     const userMessage: ChatMessage = {
-      id: `user-msg-${Date.now()}`,
+      id: `user-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
       sender: 'user',
       text: inputValue,
       timestamp: new Date(),
@@ -199,13 +204,15 @@ export default function ChatInterface() {
       const resumeIsEffectivelyEmpty = !parsedResumeText || parsedResumeText.trim() === "";
 
       if (intent === 'general_question') {
-        if(resumeIsEffectivelyEmpty && messages.length <= 2 && currentQuery.length < 20 && !currentQuery.toLowerCase().includes("resume")) {
+        // For general questions, if no resume is present and it's an early, short message,
+        // gently remind about uploading resume for best advice.
+        if(resumeIsEffectivelyEmpty && messages.length <= 3 && currentQuery.length < 25 && !currentQuery.toLowerCase().includes("resume")) {
             const lastAiMessage = messages.filter(m => m.sender === 'ai').pop();
             if(!lastAiMessage || lastAiMessage.text !== NO_RESUME_WARNING_TEXT_GENERAL_QUESTION) {
                  setMessages((prev) => [
                     ...prev,
                     {
-                        id: `ai-warn-resume-general-${Date.now()}`,
+                        id: `ai-warn-resume-general-${Date.now()}-${Math.random().toString(36).substring(7)}`,
                         sender: 'ai',
                         text: NO_RESUME_WARNING_TEXT_GENERAL_QUESTION,
                         timestamp: new Date(),
@@ -216,10 +223,10 @@ export default function ChatInterface() {
 
         const aiRAGResponse = await contextualJobHelper({ 
           userQuery: currentQuery,
-          resumeText: parsedResumeText || undefined,
+          resumeText: parsedResumeText || undefined, // Pass resume text if available
         });
         const aiMessage: ChatMessage = {
-          id: `ai-rag-resp-${Date.now()}`,
+          id: `ai-rag-resp-${Date.now()}-${Math.random().toString(36).substring(7)}`,
           sender: 'ai',
           text: aiRAGResponse.answer,
           timestamp: new Date(),
@@ -230,11 +237,12 @@ export default function ChatInterface() {
       } 
       else if (intent === 'job_search') {
         if (resumeIsEffectivelyEmpty) {
+            // Check if the warning was already the last AI message.
             setMessages(prev => {
                 const lastMessage = prev.filter(m => m.sender === 'ai').pop();
-                if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH) return prev;
+                if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH) return prev; // Avoid duplicate warning
                 return [...prev, {
-                    id: `ai-err-no-resume-${Date.now()}`,
+                    id: `ai-err-no-resume-${Date.now()}-${Math.random().toString(36).substring(7)}`,
                     sender: 'ai',
                     text: NO_RESUME_WARNING_TEXT_JOB_SEARCH,
                     timestamp: new Date(),
@@ -245,7 +253,7 @@ export default function ChatInterface() {
         }
 
         const aiJobResponse = await jobRecommendation({
-          resumeText: parsedResumeText || "No resume provided.",
+          resumeText: parsedResumeText || "No resume provided.", // Should not happen due to check above
           userPreferences: currentQuery,
         });
 
@@ -253,30 +261,33 @@ export default function ChatInterface() {
           ? "Here are some job recommendations based on your query and resume:"
           : (aiJobResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
         
+        // Explicitly use noResultsFeedback if it's provided and there are no jobs
         if (aiJobResponse.noResultsFeedback && (!aiJobResponse.recommendedJobs || aiJobResponse.recommendedJobs.length === 0)) {
           responseText = aiJobResponse.noResultsFeedback;
         }
 
 
         const aiMessage: ChatMessage = {
-          id: `ai-job-resp-${Date.now()}`,
+          id: `ai-job-resp-${Date.now()}-${Math.random().toString(36).substring(7)}`,
           sender: 'ai',
           text: responseText,
           timestamp: new Date(),
           relatedJobs: aiJobResponse.recommendedJobs,
           searchQueryUsed: aiJobResponse.searchQueryUsed,
+          // Only set noResultsFeedback if jobs array is empty AND feedback exists
           noResultsFeedback: aiJobResponse.noResultsFeedback && (!aiJobResponse.recommendedJobs || aiJobResponse.recommendedJobs.length === 0) ? aiJobResponse.noResultsFeedback : undefined,
           isRAGResponse: false,
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
       } else {
+        // Fallback to general question if intent is somehow unclear (should be rare with a schema)
         console.warn(`Unexpected intent: ${intent}. Defaulting to general question (RAG).`);
         const aiRAGResponse = await contextualJobHelper({ 
           userQuery: currentQuery,
           resumeText: parsedResumeText || undefined,
         });
         const aiMessage: ChatMessage = {
-          id: `ai-rag-resp-default-${Date.now()}`,
+          id: `ai-rag-resp-default-${Date.now()}-${Math.random().toString(36).substring(7)}`,
           sender: 'ai',
           text: aiRAGResponse.answer,
           timestamp: new Date(),
@@ -290,7 +301,7 @@ export default function ChatInterface() {
       console.error("Error processing message with AI flow(s):", error);
       const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred with the AI assistant.";
       const aiErrorMessage: ChatMessage = {
-        id: `ai-err-flow-${Date.now()}`,
+        id: `ai-err-flow-${Date.now()}-${Math.random().toString(36).substring(7)}`,
         sender: 'ai',
         text: `Sorry, I encountered an error: ${errorMessageText}. Please try again.`,
         timestamp: new Date(),
@@ -306,15 +317,22 @@ export default function ChatInterface() {
     }
   };
 
+  // Chat input is disabled if:
+  // 1. AI is currently loading a response.
+  // 2. Resume text has not yet been checked/loaded from localStorage (parsedResumeText is null).
+  // 3. Resume text has been checked and found to be empty, AND the last AI message was the specific "no resume" warning for job searches.
+  //    This allows users to still ask general questions even with an empty resume, unless they just tried a job search.
   const isChatInputDisabled = 
     isLoading || 
-    parsedResumeText === null || // Not yet checked localStorage
-    (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH);
+    parsedResumeText === null || 
+    (parsedResumeText.trim() === "" && 
+     messages.length > 0 && 
+     messages.filter(m=>m.sender==='ai').pop()?.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH);
 
 
   return (
     <>
-      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-20rem)] sm:h-[calc(100vh-16rem)] max-h-[80vh] border-primary/30 relative overflow-hidden bg-card">
+      <Card className="w-full shadow-xl flex flex-col border-primary/30 relative overflow-hidden bg-card min-h-[550px] md:min-h-[650px] lg:h-[75vh] max-h-[850px]">
         <CardHeader className="bg-primary/10 dark:bg-primary/20 border-b border-primary/20">
           <CardTitle className="text-xl font-semibold flex items-center gap-2 text-primary">
             <Cpu className="h-6 w-6" /> AI Career Assistant
@@ -381,15 +399,15 @@ export default function ChatInterface() {
 
                         let dataAiHintForPlaceholder = "company logo";
                         if (job.company) {
-                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w)); // filter for alphanumeric words
+                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w)); 
                             if (words.length > 0) {
-                                dataAiHintForPlaceholder = words[0].substring(0,15); // first word, max 15 chars
+                                dataAiHintForPlaceholder = words[0].substring(0,15); 
                                 if (words.length > 1 && words[1]) {
-                                    const combined = `${words[0].substring(0,10)} ${words[1].substring(0,9)}`.trim(); // first two words, combined max 20 chars
+                                    const combined = `${words[0].substring(0,10)} ${words[1].substring(0,9)}`.trim(); 
                                     if (combined.length <= 20 && combined.length > 0) dataAiHintForPlaceholder = combined;
                                 }
                             }
-                            if(dataAiHintForPlaceholder.length === 0 || dataAiHintForPlaceholder === "logo") dataAiHintForPlaceholder = "company"; // ultimate fallback
+                            if(dataAiHintForPlaceholder.length === 0 || dataAiHintForPlaceholder === "logo") dataAiHintForPlaceholder = "company";
                         }
 
 
