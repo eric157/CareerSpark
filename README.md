@@ -108,6 +108,56 @@ Tools extend the LLM's capabilities by allowing it to interact with external sys
 
 [Zod](https://zod.dev/) is used extensively with Genkit to define the input and output schemas for all AI flows, prompts, and tools. This ensures data consistency, provides type safety, and helps guide the LLM in generating structured output according to the expected format. Genkit uses these schemas for validation at runtime.
 
+### 6. Visual Overview of AI Agent Workflow
+
+The following diagram illustrates the high-level agentic workflow within Career Spark. This is a [Mermaid](https://mermaid.js.org/) diagram, which should render visually on platforms like GitHub.
+
+```mermaid
+graph TD
+    A[User Enters Chat Query] --> B{Classify User Intent};
+    B -- Job Search Query --> C[Job Recommendation Flow];
+    C --> D{Formulate Search Query for Tool};
+    D --> E[Invoke searchJobsTool (SerpApi)];
+    E --> F[LLM Evaluates Job Results & Resume];
+    F --> G[Present Job Recommendations to User];
+    B -- General Career Question --> H[Contextual Job Helper Flow (RAG)];
+    H --> I[Invoke relevantInfoRetrieverTool (Mock)];
+    I --> J[LLM Answers Question (using retrieved context + resume)];
+    J --> K[Present Answer to User];
+
+    subgraph "Job Recommendation Sub-Process"
+        C
+        D
+        E
+        F
+    end
+
+    subgraph "RAG Sub-Process"
+        H
+        I
+        J
+    end
+
+    style A fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
+    style B fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
+    style C fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
+    style D fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
+    style E fill:#FFEECF,stroke:#E6B800,stroke-width:1px
+    style F fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
+    style G fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
+    style H fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
+    style I fill:#FFEECF,stroke:#E6B800,stroke-width:1px
+    style J fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
+    style K fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
+```
+
+**Diagram Legend:**
+- Diamond shapes (like "Classify User Intent") represent decision points or AI model invocations for classification.
+- Rectangular shapes represent processes or AI flows.
+- Rounded rectangles within subgraphs represent major steps within those flows.
+- Arrows indicate the direction of data or control flow.
+
+
 ## Development Journey: Challenges & Solutions
 
 Building this AI-powered application involved an iterative process, tackling several common challenges:
@@ -168,5 +218,3 @@ This iterative process of identifying issues, refining prompts, adjusting code l
     *   Get answers to general career questions, interview tips, and more using a RAG-enhanced AI.
 *   **Real-time Job Search**: Fetches current job openings using the SerpApi.
 *   **Detailed Job View**: Click on a job suggestion in the chat to see more details in a modal.
-
-    
