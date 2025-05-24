@@ -46,8 +46,8 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 overflow-y-auto"> {/* Removed px-6 py-4 from here */}
-          <div className="space-y-6 px-6 py-4"> {/* Added px-6 py-4 here */}
+        <ScrollArea className="flex-1 overflow-y-auto">
+          <div className="space-y-6 px-6 pt-4 pb-24"> {/* Changed py-4 to pt-4 pb-24 */}
             {job.summary && (
                 <div>
                     <h4 className="font-semibold text-lg mb-1.5 text-foreground">Summary</h4>
