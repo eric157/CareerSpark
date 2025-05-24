@@ -13,6 +13,7 @@ import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
 import { contextualJobHelper } from '@/ai/flows/contextual-job-helper-flow';
+import { classifyUserIntent } from '@/ai/flows/intent-classifier-flow'; // New import
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import JobDetailModal from './JobDetailModal';
@@ -22,86 +23,6 @@ import { useToast } from '@/hooks/use-toast';
 const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search or answer your career questions today?";
 const INITIAL_PROMPT_TEXT = "Hello! Upload your resume so I can assist you with personalized job recommendations and answer your career questions.";
 const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page. You can still ask general career questions.";
-
-
-export const isGeneralQuestion = (query: string): boolean => {
-  const q = query.toLowerCase().trim();
-
-  // 1. Highly specific informational queries (prioritized)
-  const verySpecificInfoPatterns = [
-    /^give me a (roadmap|guide|plan|list|summary|explanation|overview|breakdown|report) for .*/i,
-    /^tell me about .*/i,
-    /^explain .*/i,
-    /^what is .*/i,
-    /^what are .*/i,
-    /^how do i .*/i,
-    /^how to .*/i,
-    /^how does .* work/i,
-    /^(steps to|guide to|roadmap for) .*/i, // Covers "roadmap for AI engineer"
-  ];
-  if (verySpecificInfoPatterns.some(pattern => pattern.test(q))) {
-    // Check for explicit job search overrides WITHIN these specific patterns (less likely but defensive)
-    const explicitJobSearchInInfo = [
-        /(find|search|list|get|show me) .* (jobs|roles|positions|openings)/i
-    ];
-    if (explicitJobSearchInInfo.some(cmd => cmd.test(q))) {
-        // e.g., "give me a plan for finding jobs as an AI engineer" could be job search
-        // This is a nuanced area. For now, if it matches a very specific info pattern,
-        // and the job command isn't overwhelmingly strong, lean towards info.
-        // If the job command is primary, it should be caught by next block.
-        if (q.includes("jobs for") || q.includes("roles for")) return false; // "roadmap for jobs for ai engineer"
-    }
-    return true;
-  }
-
-  // 2. Explicit job search commands
-  const explicitJobSearchCommands = [
-    /(find|search for|look for|show me|get me|list) .* (jobs|roles|positions|openings|vacancies)/i,
-    /looking for .* (jobs|roles|positions|openings|vacancies)/i,
-    /recommend .* (jobs|roles|positions|openings|vacancies)/i,
-    /suggest .* (jobs|roles|positions|openings|vacancies)/i,
-    // Matches queries like "software engineer jobs", "data scientist remote"
-    // This requires careful tuning to avoid catching general role mentions.
-    // For now, keeping it tied to explicit action words.
-  ];
-  if (explicitJobSearchCommands.some(pattern => pattern.test(q))) {
-    return false;
-  }
-
-  // 3. Other informational patterns (less specific than group 1 but still strong)
-  const otherInformationalPatterns = [
-    /learn about/i,
-    /information on/i, /details about/i,
-    /pros and cons of/i,
-    /what are the (skills|requirements|responsibilities|duties)( for| related to)?/i,
-    /tips for/i, /advice on/i, /best practices for/i,
-    /^define /i, /^compare /i,
-  ];
-  if (otherInformationalPatterns.some(pattern => pattern.test(q))) {
-     // Check for explicit job search overrides again
-    if (explicitJobSearchCommands.some(command => command.test(q))) {
-        return false;
-    }
-    return true;
-  }
-
-  // 4. Queries ending with a question mark (that aren't explicit job searches)
-  if (q.endsWith("?")) {
-    // Avoid misclassifying direct job search commands ending with '?' as general questions
-    const jobKeywords = ["job", "jobs", "role", "roles", "position", "positions", "opening", "openings", "vacancy", "vacancies"];
-    const startsWithSearchAction = ["find", "search for", "list", "show me", "get me"].some(verb => q.startsWith(verb + " "));
-
-    if (startsWithSearchAction && jobKeywords.some(keyword => q.includes(" " + keyword))) {
-      return false; // e.g., "find software engineer jobs in CA?"
-    }
-    return true; // General question ending with '?'
-  }
-
-  // 5. Default to job search if none of the above specific conditions are met.
-  // This is because the primary function of this bot is job searching.
-  // Simple noun phrases like "AI engineer" or "marketing manager remote" will fall here.
-  return false;
-};
 
 
 export default function ChatInterface() {
@@ -137,40 +58,46 @@ export default function ChatInterface() {
            )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
-          setResumeError(null);
+          // Only clear resumeError if we successfully load and validate data
+          // This prevents clearing a manual error set by an upload failure if localStorage still had old, valid data.
+          if (!fromEvent) setResumeError(null); // Clear only if not part of an upload event
         } else {
           console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
-          setResumeError("Your stored resume data was invalid or incomplete. Please re-upload.");
+          if (!fromEvent) setResumeError("Your stored resume data was invalid. Please re-upload.");
           newParsedResumeTextContent = "";
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
-        setResumeError("Could not load your resume data. Please re-upload.");
+        if (!fromEvent) setResumeError("Could not load your resume data. Please re-upload.");
         newParsedResumeTextContent = "";
       }
     } else {
-      setResumeError(null);
-      newParsedResumeTextContent = "";
+       if (!fromEvent) setResumeError(null); // Clear error if no resume data in storage and not an upload event.
+       newParsedResumeTextContent = "";
     }
 
     setParsedResumeText(newParsedResumeTextContent);
 
     setMessages(prevMessages => {
-      const uniqueInitialId = `ai-msg-initial-${Date.now()}`;
-      const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}`;
+      const uniqueInitialId = `ai-msg-initial-${Date.now()}-${Math.random()}`;
+      const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}-${Math.random()}`;
 
       if (isInitialPageLoad && prevMessages.length === 0) {
         return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
-      } else if (fromEvent && resumeIsAvailable) {
+      } else if (fromEvent && resumeIsAvailable) { // Only add "Resume Ready" text if triggered by the event
         const lastMessage = prevMessages[prevMessages.length - 1];
-        const isAlreadyPresent = lastMessage?.sender === 'ai' &&
-                                 (lastMessage.text === RESUME_READY_TEXT ||
-                                  lastMessage.text === INITIAL_PROMPT_TEXT ||
-                                  lastMessage.text === NO_RESUME_WARNING_TEXT);
-        if (!isAlreadyPresent) {
-           return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
+        // Check if the RESUME_READY_TEXT is already the last message to avoid duplicates from rapid events
+        if (lastMessage?.sender === 'ai' && lastMessage.text === RESUME_READY_TEXT) {
+            return prevMessages;
+        }
+        // Also avoid adding if the flow is: INITIAL_PROMPT -> user message -> RESUME_READY (if resume was uploaded before user typed)
+        // It's better to just let the AI respond to the user's query after resume is ready.
+        // Let's simplify: only add resume ready text if no user message is pending a response.
+        // Or, if chat is empty besides initial prompt.
+        if (prevMessages.length <= 1 || (lastMessage?.sender === 'ai' && !isLoading)) {
+             return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
       return prevMessages;
@@ -179,7 +106,7 @@ export default function ChatInterface() {
 
 
   useEffect(() => {
-    loadResumeData(true, false);
+    loadResumeData(true, false); // Initial load
 
     const handleResumeUpdateEvent = () => {
       toast({
@@ -187,7 +114,8 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      loadResumeData(false, true);
+      setResumeError(null); // Clear any previous resume errors on successful upload
+      loadResumeData(false, true); // Load data, indicate it's from an event
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -235,25 +163,12 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    const generalQuery = isGeneralQuestion(currentQuery);
-
-    if ((!parsedResumeText || parsedResumeText.trim() === "") && !generalQuery) {
-        setMessages(prev => {
-            const lastMessage = prev[prev.length -1];
-            if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev;
-            return [...prev, {
-                id: `ai-err-no-resume-${Date.now()}`,
-                sender: 'ai',
-                text: NO_RESUME_WARNING_TEXT,
-                timestamp: new Date(),
-            }];
-        });
-        setIsLoading(false);
-        return;
-    }
-
     try {
-      if (generalQuery) {
+      // Step 1: Classify intent
+      const intentResponse = await classifyUserIntent({ userQuery: currentQuery });
+      const intent = intentResponse.intent;
+
+      if (intent === 'general_question') {
         const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-${Date.now()}`,
@@ -264,10 +179,24 @@ export default function ChatInterface() {
           isRAGResponse: true,
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      } else if (intent === 'job_search') {
+        if (!parsedResumeText || parsedResumeText.trim() === "") {
+            setMessages(prev => {
+                const lastMessage = prev[prev.length -1];
+                if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev;
+                return [...prev, {
+                    id: `ai-err-no-resume-${Date.now()}`,
+                    sender: 'ai',
+                    text: NO_RESUME_WARNING_TEXT,
+                    timestamp: new Date(),
+                }];
+            });
+            setIsLoading(false);
+            return;
+        }
 
-      } else {
         const aiJobResponse = await jobRecommendation({
-          resumeText: parsedResumeText || "No resume provided.",
+          resumeText: parsedResumeText || "No resume provided.", // Should be caught by above check
           userPreferences: currentQuery,
         });
 
@@ -290,10 +219,23 @@ export default function ChatInterface() {
           isRAGResponse: false,
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      } else {
+        // Fallback for safety, though the intent classifier should always return one of the two
+        console.warn(`Unexpected intent: ${intent}. Defaulting to general question.`);
+        const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
+        const aiMessage: ChatMessage = {
+          id: `ai-rag-resp-default-${Date.now()}`,
+          sender: 'ai',
+          text: aiRAGResponse.answer,
+          timestamp: new Date(),
+          retrievedContextItems: aiRAGResponse.retrievedContextItems,
+          isRAGResponse: true,
+        };
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
       }
 
     } catch (error) {
-      console.error("Error processing message with AI flow:", error);
+      console.error("Error processing message with AI flow(s):", error);
       const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred with the AI assistant.";
       const aiErrorMessage: ChatMessage = {
         id: `ai-err-flow-${Date.now()}`,
@@ -311,9 +253,8 @@ export default function ChatInterface() {
       setIsLoading(false);
     }
   };
-  
-  const isChatInputDisabled = isLoading || (parsedResumeText === null) || (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT);
 
+  const isChatInputDisabled = isLoading || (parsedResumeText === null) || (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT && !messages[messages.length-1]?.isRAGResponse);
 
   return (
     <>
@@ -351,7 +292,7 @@ export default function ChatInterface() {
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap break-words">{message.text}</p>
-                  
+
                   {message.isRAGResponse && message.retrievedContextItems && message.retrievedContextItems.length > 0 && (
                     <details className="mt-2 text-xs">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground italic flex items-center gap-1">
@@ -379,10 +320,10 @@ export default function ChatInterface() {
                          if (companyNameWords.length > 1 && companyNameWords[1]) companyInitials += companyNameWords[1].substring(0,1);
                          if (!companyInitials) companyInitials = job.company?.substring(0,2) || '??';
                          const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials.toUpperCase())}`;
-                        
+
                         let dataAiHintForPlaceholder = "company logo";
                         if (job.company) {
-                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w)); // only alphanumeric
+                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w));
                             if (words.length > 0) {
                                 dataAiHintForPlaceholder = words[0].substring(0,15);
                                 if (words.length > 1 && words[1]) {
@@ -395,7 +336,7 @@ export default function ChatInterface() {
 
                         return (
                         <Card
-                            key={job.id || `job-${index}-${message.id}-item`}
+                            key={job.id || `job-${index}-${message.id}-item-${Math.random()}`}
                             className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group border-primary/10 hover:border-primary/30"
                             onClick={() => handleViewJobDetails(job)}
                         >
