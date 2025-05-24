@@ -73,20 +73,20 @@ export default function ResumeUploadForm() {
           toast({
             title: "Resume Parsed Successfully!",
             description: "Your key skills have been extracted. You can now chat with the AI for personalized job recommendations.",
-            variant: "default", // Will use the new theme
+            variant: "default",
             duration: 6000,
           });
           
-          // Clear the file input visually by resetting the form element it's part of or by resetting its value if possible
           const fileInput = document.getElementById('resumeFile') as HTMLInputElement;
           if (fileInput) {
-            fileInput.value = ''; // This attempts to clear the file input
+            fileInput.value = ''; 
           }
-          setFile(null); // Clear the file state
+          setFile(null); 
           
         } catch (aiError) {
           console.error('AI parsing error:', aiError);
           setError('Failed to parse resume. Please try again or use a different file.');
+          setUploadProgress(0); // Reset progress on AI error
           toast({
             title: "Parsing Error",
             description: "There was an issue parsing your resume. Please check the file and try again.",
@@ -94,8 +94,6 @@ export default function ResumeUploadForm() {
           });
         } finally {
           setIsLoading(false);
-          // Keep progress at 100 if successful, or reset if error occurred before 100
-          if (!parsedData && !result) setUploadProgress(0); 
         }
       };
       reader.onerror = () => {
