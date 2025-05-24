@@ -27,7 +27,7 @@ const JobSearchResultSchema = z.object({
   title: z.string().describe('The job title.'),
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job. If not provided, it will be undefined.'),
-  url: z.string().url().optional().describe('A URL link to the job posting or a Google Jobs link. Omit if not available or invalid.'),
+  url: z.string().url().optional().describe('A URL link to the job posting or a Google Jobs link. This field should be omitted entirely if no valid URL is available from the source or if it\'s null. Do not use `null`.'),
   description: z.string().optional().describe('A brief snippet or summary of the job, used as description.'),
   postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). Will be undefined if not available as a string.'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). Will be undefined if not available as a string.')
@@ -99,14 +99,13 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
       ];
 
       for (const pUrl of potentialLinkSources) {
-        if (pUrl) {
+        if (pUrl && typeof pUrl === 'string') {
           try {
             new URL(pUrl); // Validate URL syntax
             determinedUrl = pUrl;
             break; // Use the first valid URL found in order of preference
           } catch (e) {
             // console.warn(`Invalid URL syntax for potential job link: ${pUrl}. Skipping.`);
-            // Continue to next potential URL
           }
         }
       }
@@ -116,12 +115,12 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
         title: job.title || 'N/A',
         company: job.company_name || 'N/A',
         location: job.location, 
-        url: determinedUrl, // Will be undefined if no valid URL was found
+        url: determinedUrl, 
         description: job.description || job.snippet || `Details for ${job.title} at ${job.company_name}.`,
         postedDate: job.detected_extensions?.posted_at || undefined, 
         employmentType: job.detected_extensions?.schedule_type || undefined,
       };
-    }); // Removed .filter(job => job.url) - jobs without URLs are now allowed
+    });
   
   } catch (error) {
     console.error('Failed to fetch jobs from SerpApi:', error);
@@ -136,21 +135,29 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
   let baseTitle = "Software Engineer";
   if (queryKeywords.includes("manager")) baseTitle = "Product Manager";
   if (queryKeywords.includes("data")) baseTitle = "Data Scientist";
+  if (queryKeywords.includes("designer")) baseTitle = "UX Designer";
+  if (queryKeywords.includes("analyst")) baseTitle = "Business Analyst";
 
-  const locations = ["New York, NY", "San Francisco, CA", "Austin, TX", "Remote"];
-  const companies = ["Innovatech", "FutureAI Dynamics", "CyberSec Corp Ltd."];
-  const jobTypes = ["Full-time", "Contract", "Part-time"];
 
-  for (let i = 0; i < Math.min(input.numResults ?? 3, 3) ; i++) {
-    const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
+  const locations = ["New York, NY", "San Francisco, CA", "Austin, TX", "Remote", "Chicago, IL"];
+  const companies = ["Innovatech Solutions", "FutureAI Dynamics", "CyberSec Corp Ltd.", "GreenLeaf Organics", "Quantum Leap AI"];
+  const jobTypes = ["Full-time", "Contract", "Part-time", "Internship"];
+
+  const numToGenerate = Math.min(input.numResults ?? 3, 3);
+
+  for (let i = 0; i < numToGenerate ; i++) {
+    const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", "internship", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
     const dynamicRole = roleFromQuery ? (roleFromQuery.charAt(0).toUpperCase() + roleFromQuery.slice(1)) : baseTitle.split(' ')[0];
     
-    const titleSuffixes = ['Lead', 'Senior', 'Associate'];
-    const dynamicTitle = `${dynamicRole} ${baseTitle.split(' ').slice(1).join(' ')} ${titleSuffixes[i % titleSuffixes.length]}`;
+    const titleSuffixes = ['Lead', 'Senior', 'Associate', 'Junior', 'Principal'];
+    const dynamicTitle = `${titleSuffixes[i % titleSuffixes.length]} ${dynamicRole} ${baseTitle.split(' ').slice(1).join(' ')}`;
     
     const dynamicCompany = companies[i % companies.length];
     const dynamicLocation = input.location || locations[i % locations.length];
-    const jobUrl = `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${i + 1}`;
+    const jobUrl = `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${dynamicCompany.toLowerCase().split(' ')[0]}-${i + 1}`;
+    const mockDescription = errorInfo 
+        ? `MOCK DATA (Real job search failed: ${errorInfo}). ` 
+        : `MOCK DATA: Seeking a talented ${dynamicTitle} for ${dynamicCompany} in ${dynamicLocation}. Key skills based on query: ${input.query}. This role involves working on cutting-edge projects and collaborating with a dynamic team to achieve innovative solutions. Responsibilities include A, B, and C. Ideal candidates will have experience in X, Y, and Z.`;
 
     results.push({
       id: uuidv4(),
@@ -158,8 +165,8 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
       company: dynamicCompany,
       location: dynamicLocation,
       url: jobUrl,
-      description: errorInfo ? `MOCK DATA (Real search failed: ${errorInfo}). ` : `MOCK DATA: Seeking a talented ${dynamicTitle} for ${dynamicCompany} in ${dynamicLocation}. Key skills based on query: ${input.query}.`,
-      postedDate: `${Math.floor(Math.random() * 10) + 1} days ago`,
+      description: mockDescription,
+      postedDate: `${Math.floor(Math.random() * 28) + 1} days ago`,
       employmentType: jobTypes[i % jobTypes.length]
     });
   }

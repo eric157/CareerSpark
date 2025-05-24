@@ -27,81 +27,63 @@ export default function ChatInterface() {
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
-  useEffect(() => {
-    const loadAndProcessResume = (isInitialPageLoad: boolean) => {
-      const storedResumeData = localStorage.getItem('parsedResumeData');
+  const loadResumeData = (isInitialPageLoad: boolean = false) => {
+    const storedResumeData = localStorage.getItem('parsedResumeData');
+    let resumeIsAvailable = false;
 
-      if (storedResumeData) {
-        try {
-          const data = JSON.parse(storedResumeData);
-          if (data && (data.skills?.length || data.experience?.length || data.education?.length)) {
-            const newParsedResumeText = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
-            setParsedResumeText(newParsedResumeText);
-            setResumeError(null);
-
-            if (!isInitialPageLoad) { // This is from a 'resumeUpdated' event
-              setMessages(prevMessages => {
-                const lastMessageText = prevMessages.length > 0 ? prevMessages[prevMessages.length - 1]?.text : null;
-                const resumeReadyMsg: ChatMessage = {
-                  id: `ai-msg-resume-ready-${Date.now()}-${Math.random().toString(36).substring(7)}`, 
-                  sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date()
-                };
-
-                if (lastMessageText === RESUME_READY_TEXT) return prevMessages;
-
-                if (lastMessageText === INITIAL_PROMPT_TEXT) {
-                  return [...prevMessages.slice(0, -1), resumeReadyMsg];
-                }
-                return [...prevMessages, resumeReadyMsg];
-              });
-            } else { // This is the initial page load and a resume was found in localStorage
-              setMessages(prevMessages => {
-                if (prevMessages.length === 0) {
-                  return [{
-                    id: `ai-msg-initial-with-resume-${Date.now()}-${Math.random().toString(36).substring(7)}`, 
-                    sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date()
-                  }];
-                }
-                return prevMessages;
-              });
-            }
-          } else {
-            throw new Error("Stored resume data is empty or invalid.");
-          }
-        } catch (e) {
-          console.error("Failed to parse/validate resume from localStorage on load/update", e);
-          setParsedResumeText("");
-          setResumeError("Could not load your resume data. Please re-upload.");
-          localStorage.removeItem('parsedResumeData'); 
-          setMessages(prevMessages => { 
-            if (prevMessages.length === 0) {
-              return [{ 
-                id: `ai-msg-load-error-${Date.now()}-${Math.random().toString(36).substring(7)}`, 
-                sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() 
-              }];
-            }
-            return prevMessages;
-          });
+    if (storedResumeData) {
+      try {
+        const data = JSON.parse(storedResumeData);
+        if (data && (data.skills?.length || data.experience?.length || data.education?.length)) {
+          const newParsedResumeText = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
+          setParsedResumeText(newParsedResumeText);
+          setResumeError(null);
+          resumeIsAvailable = true;
+        } else {
+          throw new Error("Stored resume data is empty or invalid.");
         }
-      } else { // No stored resume data
-        setParsedResumeText("");
-        setResumeError(null);
-        setMessages(prevMessages => { 
-          if (prevMessages.length === 0) {
-            return [{ 
-              id: `ai-msg-no-resume-${Date.now()}-${Math.random().toString(36).substring(7)}`, 
-              sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() 
-            }];
-          }
-          return prevMessages;
-        });
+      } catch (e) {
+        console.error("Failed to parse/validate resume from localStorage", e);
+        setParsedResumeText(""); // Explicitly set to empty string to indicate no valid resume
+        setResumeError("Could not load your resume data. Please re-upload if you previously had one.");
+        localStorage.removeItem('parsedResumeData');
+        resumeIsAvailable = false;
       }
-    };
+    } else { // No stored resume data
+      setParsedResumeText(""); // Explicitly set to empty string
+      setResumeError(null); // Clear any previous error
+      resumeIsAvailable = false;
+    }
 
-    loadAndProcessResume(true); // Call on initial mount
+    setMessages(prevMessages => {
+      // If it's an initial load and no messages yet, add the initial prompt.
+      if (isInitialPageLoad && prevMessages.length === 0) {
+        return [{
+          id: `ai-msg-initial-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date()
+        }];
+      }
+      // If it's NOT an initial load (i.e., resumeUpdated event) AND a resume is now available
+      else if (!isInitialPageLoad && resumeIsAvailable) {
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        // Add resume ready message only if it's not already the last message
+        if (!lastMessage || lastMessage.text !== RESUME_READY_TEXT) {
+          return [...prevMessages, {
+            id: `ai-msg-resume-ready-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date()
+          }];
+        }
+      }
+      return prevMessages; // No change to messages
+    });
+  };
+
+
+  useEffect(() => {
+    loadResumeData(true); // Call on initial mount
 
     const handleResumeUpdateEvent = () => {
-      loadAndProcessResume(false); // Call when resume is updated
+      loadResumeData(false); // Call when resume is updated
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -148,12 +130,13 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (parsedResumeText === null || !parsedResumeText) {
+    if (parsedResumeText === null || !parsedResumeText) { // Check for null or empty string
         const noResumeMsgText = "I couldn't find your resume details. Please upload your resume using the form for personalized job recommendations.";
         setMessages(prev => {
-            if (prev.length > 0 && prev[prev.length -1].text === noResumeMsgText) return prev;
+            const lastMessage = prev[prev.length -1];
+            if (lastMessage && lastMessage.text === noResumeMsgText && lastMessage.sender === 'ai') return prev; // Avoid duplicate error
             return [...prev, {
-                id: `ai-err-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                id: `ai-err-no-resume-${Date.now()}-${Math.random().toString(36).substring(7)}`,
                 sender: 'ai',
                 text: noResumeMsgText,
                 timestamp: new Date(),
@@ -185,6 +168,7 @@ export default function ChatInterface() {
         timestamp: new Date(),
         relatedJobs: aiResponse.recommendedJobs,
         searchQueryUsed: aiResponse.searchQueryUsed,
+        noResultsFeedback: aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0 ? aiResponse.noResultsFeedback : undefined,
       };
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
 
@@ -248,7 +232,8 @@ export default function ChatInterface() {
                     {message.relatedJobs.map((job, index) => {
                        const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
                        const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials)}`;
-                       const dataAiHintForPlaceholder = job.company?.split(' ')[0]?.toLowerCase() || "company";
+                       const companyNameFirstWord = job.company?.split(' ')[0]?.toLowerCase() || "company";
+                       const dataAiHintForPlaceholder = companyNameFirstWord.length > 15 ? companyNameFirstWord.substring(0,15) : companyNameFirstWord;
 
                        return (
                        <Card key={job.id || index} className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200">
@@ -344,3 +329,4 @@ export default function ChatInterface() {
     </Card>
   );
 }
+
