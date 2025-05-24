@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
@@ -5,16 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Paperclip, SendHorizonal, User, Cpu } from 'lucide-react';
+import { Paperclip, SendHorizonal, User, Cpu, Search } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
-import { jobRecommendation } from '@/ai/flows/job-recommendation'; // Example AI flow
+import { jobRecommendation } from '@/ai/flows/job-recommendation'; 
 import { Skeleton } from '@/components/ui/skeleton';
 
-// Mock job listings for AI flow input
-const mockJobListings = [
+// Mock job listings for AI flow input - these can be used if the AI decides they are relevant
+// or it can use the new searchJobsTool to find others.
+const MOCK_PROVIDED_JOB_LISTINGS = [
   "Software Engineer at Google, Mountain View, CA. Experience with Java, Python, C++. B.S. in Computer Science.",
   "Product Manager at Microsoft, Redmond, WA. 5+ years experience in product management. MBA preferred.",
   "UX Designer at Apple, Cupertino, CA. Portfolio required. Strong understanding of user-centered design principles.",
@@ -26,6 +28,22 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [parsedResumeText, setParsedResumeText] = useState<string>("Experienced software engineer with skills in React, Node.js, and Python. Interested in remote work. Focus on web development roles.");
+
+  useEffect(() => {
+    // Load parsed resume data from localStorage if available
+    const storedResumeData = localStorage.getItem('parsedResumeData');
+    if (storedResumeData) {
+      try {
+        const data = JSON.parse(storedResumeData);
+        const text = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
+        setParsedResumeText(text);
+      } catch (e) {
+        console.error("Failed to parse resume data from localStorage", e);
+      }
+    }
+  }, []);
+
 
   const scrollToBottom = () => {
     if (scrollAreaRef.current) {
@@ -55,41 +73,38 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      // Simulate AI call or integrate actual AI flow
-      // For demo, let's use jobRecommendation if the message seems like a request
-      if (inputValue.toLowerCase().includes("find jobs") || inputValue.toLowerCase().includes("recommend jobs")) {
-        const aiResponse = await jobRecommendation({
-          // This would ideally come from user profile/resume
-          resumeText: "Experienced software engineer with skills in React, Node.js, and Python. Interested in remote work.", 
-          userPreferences: inputValue, // Use user's query as preference for now
-          jobListings: mockJobListings,
-        });
-        
-        const aiMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          sender: 'ai',
-          text: aiResponse.recommendedJobs.length > 0 ? "Here are some job recommendations based on your query:" : "I couldn't find specific jobs for that query, but here's general advice...",
-          timestamp: new Date(),
-          relatedJobs: aiResponse.recommendedJobs,
-        };
-        setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      // Use jobRecommendation flow for job-related queries
+      // The flow will decide whether to use provided listings or search via the tool
+      const aiResponse = await jobRecommendation({
+        resumeText: parsedResumeText, 
+        userPreferences: userMessage.text, // Use user's query as preference
+        jobListings: MOCK_PROVIDED_JOB_LISTINGS, // Provide some initial listings
+      });
+      
+      let responseText = aiResponse.recommendedJobs.length > 0 
+        ? "Here are some job recommendations based on your query:" 
+        : "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.";
 
-      } else {
-         // Generic AI response
-        const aiMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          sender: 'ai',
-          text: `I've received your message: "${userMessage.text}". I'm still learning, but I can try to help with job searches! Try asking me to "find jobs for a react developer".`,
-          timestamp: new Date(),
-        };
-        setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      if (aiResponse.searchQueryUsed) {
+        responseText += ` (I searched for: "${aiResponse.searchQueryUsed}")`;
       }
+
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: responseText,
+        timestamp: new Date(),
+        relatedJobs: aiResponse.recommendedJobs,
+        searchQueryUsed: aiResponse.searchQueryUsed,
+      };
+      setMessages((prevMessages) => [...prevMessages, aiMessage]);
+
     } catch (error) {
       console.error("Error processing message:", error);
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: "Sorry, I encountered an error trying to process your request.",
+        text: "Sorry, I encountered an error trying to process your request. Please ensure your resume is uploaded or try again.",
         timestamp: new Date(),
       };
       setMessages((prevMessages) => [...prevMessages, errorMessage]);
@@ -126,7 +141,12 @@ export default function ChatInterface() {
                     : 'bg-card text-card-foreground border border-border rounded-bl-none'
                 }`}
               >
-                <p className="text-sm">{message.text}</p>
+                <p className="text-sm whitespace-pre-line">{message.text}</p>
+                {message.searchQueryUsed && (
+                  <p className="text-xs opacity-70 mt-1 italic flex items-center gap-1">
+                    <Search size={12}/> Searched for: "{message.searchQueryUsed}"
+                  </p>
+                )}
                 {message.relatedJobs && message.relatedJobs.length > 0 && (
                   <div className="mt-3 space-y-2">
                     {message.relatedJobs.map((job, index) => (
@@ -134,10 +154,19 @@ export default function ChatInterface() {
                         <h4 className="font-semibold text-sm">{job.title}</h4>
                         <p className="text-xs text-muted-foreground">{job.company} - {job.location}</p>
                         <p className="text-xs mt-1 line-clamp-2">{job.summary}</p>
-                        <Badge variant="secondary" className="mt-1 text-xs">Relevance: {job.relevanceScore}%</Badge>
-                        <Link href={`/jobs?jobId=${job.title.replace(/\s+/g, '-')}`} passHref>
+                        <div className="flex justify-between items-center mt-1">
+                          <Badge variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} className="text-xs">Relevance: {job.relevanceScore}%</Badge>
+                          {job.source && <Badge variant="outline" className="text-xs capitalize">{job.source === "webSearch" ? "Web Search" : "Provided"}</Badge>}
+                        </div>
+                        {job.url ? (
+                           <a href={job.url} target="_blank" rel="noopener noreferrer">
+                             <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Original Post</Button>
+                           </a>
+                        ) : (
+                          <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}`} passHref>
                            <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Details</Button>
-                        </Link>
+                          </Link>
+                        )}
                       </Card>
                     ))}
                   </div>
@@ -170,13 +199,13 @@ export default function ChatInterface() {
       </ScrollArea>
       <CardFooter className="p-4 border-t">
         <form onSubmit={handleSubmit} className="flex w-full items-center gap-2">
-          <Button variant="ghost" size="icon" type="button" className="shrink-0">
+          <Button variant="ghost" size="icon" type="button" className="shrink-0" title="Attach resume (feature coming soon)" disabled>
             <Paperclip className="h-5 w-5" />
             <span className="sr-only">Attach file</span>
           </Button>
           <Input
             type="text"
-            placeholder="Ask about jobs, skills, or companies..."
+            placeholder="e.g., 'Find remote React jobs' or 'Entry level marketing roles'"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="flex-1"

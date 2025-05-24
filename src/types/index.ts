@@ -1,3 +1,4 @@
+
 import type { ParseResumeOutput } from "@/ai/flows/resume-parsing";
 import type { JobRecommendationOutput } from "@/ai/flows/job-recommendation";
 
@@ -15,6 +16,7 @@ export interface JobListing {
   employmentType?: string;
   salaryRange?: string;
   imageUrl?: string; // Optional company logo or job image
+  dataAihint?: string; // for placeholder images
   relevancyScore?: number;
   personalizedExplanation?: string;
 }
@@ -28,4 +30,5 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   relatedJobs?: RecommendedJob[]; // Optional: if AI response includes job recommendations
+  searchQueryUsed?: string; // Optional: if AI performed a search
 }
