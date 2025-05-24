@@ -32,14 +32,16 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
       <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b sticky top-0 bg-background z-10">
           <DialogTitle className="text-2xl font-bold text-primary">{job.title || 'Job Title Not Available'}</DialogTitle>
-          <DialogDescription className="text-sm space-y-1 pt-1">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Building size={16} />
-              <span>{job.company || 'Company Not Available'}</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin size={16} />
-              <span>{job.location || 'Location Not Available'}</span>
+          <DialogDescription asChild className="text-sm pt-1">
+            <div className="space-y-1"> {/* This div will be rendered by DialogDescription */}
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Building size={16} />
+                <span>{job.company || 'Company Not Available'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <MapPin size={16} />
+                <span>{job.location || 'Location Not Available'}</span>
+              </div>
             </div>
           </DialogDescription>
         </DialogHeader>
