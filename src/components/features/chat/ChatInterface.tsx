@@ -13,7 +13,7 @@ import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import JobDetailModal from './JobDetailModal'; 
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,7 +28,8 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); // null means not yet checked, "" means checked and no valid resume
+  // null: not checked; "": checked, no valid resume; string: valid resume text
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); 
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
@@ -44,12 +45,17 @@ export default function ChatInterface() {
   const loadResumeData = (isInitialPageLoad: boolean = false) => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
     let resumeIsAvailable = false;
-    let newParsedResumeTextContent = "";
+    let newParsedResumeTextContent = ""; // Default to empty string (no valid resume)
 
     if (storedResumeData) {
       try {
         const data = JSON.parse(storedResumeData);
-        if (data && (data.skills?.length || data.experience?.length || data.education?.length)) {
+        // Validate if essential fields are present and have content
+        if (data && (
+            (Array.isArray(data.skills) && data.skills.length > 0) || 
+            (Array.isArray(data.experience) && data.experience.length > 0) ||
+            (Array.isArray(data.education) && data.education.length > 0)
+           )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
           setResumeError(null);
@@ -57,37 +63,33 @@ export default function ChatInterface() {
           console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
           setResumeError("Your stored resume data was invalid. Please re-upload.");
-          resumeIsAvailable = false;
+          // newParsedResumeTextContent remains ""
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
         setResumeError("Could not load your resume data. Please re-upload.");
-        resumeIsAvailable = false;
+        // newParsedResumeTextContent remains ""
       }
     } else { 
-      setResumeError(null); 
-      resumeIsAvailable = false;
+      setResumeError(null); // No stored data, so no error related to loading it
+      // newParsedResumeTextContent remains ""
     }
     
-    setParsedResumeText(newParsedResumeTextContent); // Always set, empty if no resume
+    setParsedResumeText(newParsedResumeTextContent);
 
     setMessages(prevMessages => {
-      // On initial load, if no messages yet, add the initial prompt.
       if (isInitialPageLoad && prevMessages.length === 0) {
         const uniqueId = `ai-msg-initial-${Date.now()}`;
         return [{ id: uniqueId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
-      }
-      // If triggered by resumeUpdated event (not initial load) AND resume is now available
-      else if (!isInitialPageLoad && resumeIsAvailable) {
-        const lastMessageText = prevMessages[prevMessages.length - 1]?.text;
-        // Add RESUME_READY_TEXT only if it's not already the last message.
-        if (lastMessageText !== RESUME_READY_TEXT) {
+      } else if (!isInitialPageLoad && resumeIsAvailable) { // Resume was just updated
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        if (!lastMessage || lastMessage.text !== RESUME_READY_TEXT) {
           const uniqueId = `ai-msg-resume-ready-${Date.now()}`;
           return [...prevMessages, { id: uniqueId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
-      return prevMessages; // No change
+      return prevMessages; 
     });
   };
 
@@ -101,7 +103,7 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      loadResumeData(false); // Triggered by event
+      loadResumeData(false); // Triggered by event (not initial page load)
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -148,9 +150,11 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (parsedResumeText === null || !parsedResumeText.trim()) { 
+    // Check if parsedResumeText is effectively empty (null, or empty string)
+    if (!parsedResumeText) { 
         setMessages(prev => {
             const lastMessage = prev[prev.length -1];
+            // Avoid duplicate warnings
             if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev; 
             return [...prev, {
                 id: `ai-err-no-resume-${Date.now()}`,
@@ -165,7 +169,7 @@ export default function ChatInterface() {
 
     try {
       const aiResponse = await jobRecommendation({
-        resumeText: parsedResumeText,
+        resumeText: parsedResumeText, // This will be an empty string if no valid resume
         userPreferences: userMessage.text,
       });
 
@@ -173,7 +177,6 @@ export default function ChatInterface() {
         ? "Here are some job recommendations based on your query and resume:"
         : (aiResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
 
-      // Override responseText if noResultsFeedback is explicitly provided and no jobs are found
       if (aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0) {
         responseText = aiResponse.noResultsFeedback;
       }
@@ -195,7 +198,7 @@ export default function ChatInterface() {
       const aiErrorMessage: ChatMessage = {
         id: `ai-err-flow-${Date.now()}`,
         sender: 'ai',
-        text: `Sorry, I encountered an error: ${errorMessageText}. Please check the console for details or try again.`,
+        text: `Sorry, I encountered an error: ${errorMessageText}. Please try again.`,
         timestamp: new Date(),
       };
       setMessages((prevMessages) => [...prevMessages, aiErrorMessage]);
@@ -209,33 +212,35 @@ export default function ChatInterface() {
     }
   };
 
-  const isChatDisabled = isLoading || parsedResumeText === null || parsedResumeText.trim() === "";
+  // Chat is disabled if loading, or if resume text is null (not checked) or "" (checked and no valid resume)
+  const isChatDisabled = isLoading || !parsedResumeText;
 
   return (
     <>
-      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-14rem)] sm:h-[calc(100vh-10rem)] max-h-[700px] border-2 border-primary/20 relative overflow-hidden">
-        <CardHeader className="bg-primary/5 dark:bg-primary/10">
-          <CardTitle className="text-xl font-semibold flex items-center gap-2">
-            <Cpu className="text-primary h-6 w-6" /> AI Career Assistant
+      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-16rem)] sm:h-[calc(100vh-12rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card">
+        <CardHeader className="bg-primary/10 dark:bg-primary/20 border-b border-primary/20">
+          <CardTitle className="text-xl font-semibold flex items-center gap-2 text-primary">
+            <Cpu className="h-6 w-6" /> AI Career Assistant
           </CardTitle>
         </CardHeader>
         <ScrollArea className="flex-1 p-4 bg-background" ref={scrollAreaRef} onScroll={handleScroll}>
           <div className="space-y-6 pb-4">
             {resumeError && (
-              <Alert variant="destructive" className="mb-4 shadow-md">
-                <AlertTriangle className="h-5 w-5" />
-                <AlertDescription className="font-medium">{resumeError}</AlertDescription>
+              <Alert variant="destructive" className="mb-4 shadow-md bg-destructive/10 border-destructive/30">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                <AlertTitle className="text-destructive">Resume Error</AlertTitle>
+                <AlertDescription className="font-medium text-destructive/90">{resumeError}</AlertDescription>
               </Alert>
             )}
             {messages.map((message, msgIdx) => (
               <div
-                key={message.id}
+                key={`${message.id}-${msgIdx}`} // Ensure key is unique even if IDs were to collide (unlikely with Date.now)
                 className={`flex items-end gap-2.5 animate-fadeInUp`}
                 style={{ animationDelay: `${msgIdx * 0.05}s`}}
               >
                 {message.sender === 'ai' && (
                   <Avatar className="h-9 w-9 shadow-sm">
-                    <AvatarFallback className="bg-primary text-primary-foreground">AI</AvatarFallback>
+                    <AvatarFallback className="bg-primary text-primary-foreground font-semibold">AI</AvatarFallback>
                   </Avatar>
                 )}
                 <div
@@ -257,33 +262,50 @@ export default function ChatInterface() {
                       {message.relatedJobs.map((job, index) => {
                         const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
                         const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials)}`;
-                        const companyNameFirstWord = job.company?.split(' ')[0]?.toLowerCase().replace(/[^a-z0-9]/gi, '') || "company";
-                        const dataAiHintForPlaceholder = companyNameFirstWord.length > 15 ? companyNameFirstWord.substring(0,15) : companyNameFirstWord;
+                        
+                        let dataAiHintForPlaceholder = "company logo"; // Default hint
+                        if (job.company) {
+                            const companyNameWords = job.company.split(' ');
+                            if (companyNameWords.length > 0) {
+                                const firstWord = companyNameWords[0].toLowerCase().replace(/[^a-z0-9]/gi, '');
+                                dataAiHintForPlaceholder = firstWord.length > 15 ? firstWord.substring(0,15) : firstWord;
+                                if (companyNameWords.length > 1) {
+                                    const secondWord = companyNameWords[1].toLowerCase().replace(/[^a-z0-9]/gi, '');
+                                    const combinedHint = `${firstWord} ${secondWord}`;
+                                    if (combinedHint.length <= 20) dataAiHintForPlaceholder = combinedHint;
+                                }
+                            }
+                        }
+
 
                         return (
                         <Card 
-                            key={job.id || `job-${index}-${message.id}`} // More robust key
-                            className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
+                            key={job.id || `job-${index}-${message.id}`} 
+                            className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group border-primary/10 hover:border-primary/30"
                             onClick={() => handleViewJobDetails(job)}
                         >
                           <div className="flex items-start gap-3">
                             <Image
                               src={placeholderImageUrl}
-                              alt={`${job.company} logo placeholder`}
+                              alt={`${job.company || 'Company'} logo placeholder`}
                               width={48} height={48}
-                              className="rounded-lg border object-contain bg-muted flex-shrink-0 mt-1"
+                              className="rounded-lg border object-contain bg-muted flex-shrink-0 mt-1 shadow-sm"
                               data-ai-hint={dataAiHintForPlaceholder}
                             />
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors" title={job.title}>{job.title}</h4>
-                              <p className="text-xs text-muted-foreground truncate" title={`${job.company} - ${job.location}`}>{job.company} - {job.location || 'Not specified'}</p>
+                              <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors text-foreground" title={job.title || 'Job Title'}>{job.title || 'N/A'}</h4>
+                              <p className="text-xs text-muted-foreground truncate" title={`${job.company || 'Company'} - ${job.location || 'Location'}`}>{job.company || 'N/A'} - {job.location || 'Not specified'}</p>
                             </div>
                           </div>
-                          <p className="text-xs mt-2 line-clamp-3">{job.summary}</p>
+                          <p className="text-xs mt-2 line-clamp-3 text-muted-foreground">{job.summary || 'No summary available.'}</p>
                           <div className="flex flex-wrap gap-2 items-center mt-2.5">
-                            <Badge variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} className="text-xs py-0.5 px-2 shadow-sm">Relevance: {job.relevanceScore}%</Badge>
-                            {job.postedDate && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm">{job.postedDate}</Badge>}
-                            {job.employmentType && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm">{job.employmentType}</Badge>}
+                            <Badge 
+                                variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} 
+                                className="text-xs py-0.5 px-2 shadow-sm"
+                            >Relevance: {job.relevanceScore}%
+                            </Badge>
+                            {job.postedDate && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90">{job.postedDate}</Badge>}
+                            {job.employmentType && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90">{job.employmentType}</Badge>}
                           </div>
                           <div className="flex items-center justify-between mt-2.5">
                             <Button 
@@ -323,13 +345,13 @@ export default function ChatInterface() {
             {isLoading && (
               <div className="flex items-end gap-2.5 justify-start animate-fadeInUp">
                   <Avatar className="h-9 w-9 shadow-sm">
-                    <AvatarFallback className="bg-primary text-primary-foreground">AI</AvatarFallback>
+                    <AvatarFallback className="bg-primary text-primary-foreground font-semibold">AI</AvatarFallback>
                   </Avatar>
                   <div className="max-w-[70%] rounded-xl px-4 py-3 shadow-lg bg-card text-card-foreground border border-border rounded-bl-none">
                     <div className="space-y-2">
-                      <Skeleton className="h-3 w-[60px] rounded" />
-                      <Skeleton className="h-3 w-[180px] rounded" />
-                      <Skeleton className="h-3 w-[120px] rounded" />
+                      <Skeleton className="h-3 w-[60px] rounded bg-primary/20" />
+                      <Skeleton className="h-3 w-[180px] rounded bg-primary/20" />
+                      <Skeleton className="h-3 w-[120px] rounded bg-primary/20" />
                     </div>
                   </div>
               </div>
@@ -340,25 +362,26 @@ export default function ChatInterface() {
           <Button
             variant="outline"
             size="icon"
-            className="absolute bottom-20 right-4 z-10 rounded-full shadow-lg bg-card hover:bg-muted"
+            className="absolute bottom-20 right-4 z-10 rounded-full shadow-lg bg-card hover:bg-muted border-primary/30"
             onClick={() => scrollToBottom('smooth')}
             aria-label="Scroll to bottom"
           >
-            <ArrowDown className="h-5 w-5" />
+            <ArrowDown className="h-5 w-5 text-primary" />
           </Button>
         )}
-        <CardFooter className="p-4 border-t bg-primary/5 dark:bg-primary/10">
+        <CardFooter className="p-4 border-t bg-primary/10 dark:bg-primary/20 border-primary/20">
           <form onSubmit={handleSubmit} className="flex w-full items-center gap-3">
-            <Button variant="ghost" size="icon" type="button" className="shrink-0 text-muted-foreground hover:text-primary" title="Attach file (feature coming soon)" disabled>
+            {/* Paperclip button can be re-enabled if file attachments to chat are implemented later */}
+            {/* <Button variant="ghost" size="icon" type="button" className="shrink-0 text-muted-foreground hover:text-primary" title="Attach file (feature coming soon)" disabled>
               <Paperclip className="h-5 w-5" />
               <span className="sr-only">Attach file</span>
-            </Button>
+            </Button> */}
             <Input
               type="text"
-              placeholder={parsedResumeText === null || !parsedResumeText.trim() ? "Upload your resume first..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
+              placeholder={isChatDisabled ? "Upload your resume first..." : "e.g., 'Find remote React jobs' or 'Entry level marketing roles'"}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50"
+              className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50 bg-background placeholder:text-muted-foreground/80"
               disabled={isChatDisabled}
             />
             <Button type="submit" size="icon" disabled={isChatDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
