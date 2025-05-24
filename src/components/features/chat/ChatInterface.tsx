@@ -33,11 +33,11 @@ function renderFormattedText(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index}>{part.substring(2, part.length - 2)}</strong>;
+      return <strong key={`${index}-${part.substring(0, 5)}`}>{part.substring(2, part.length - 2)}</strong>;
     }
     // Basic check for *italic* - can be expanded if more markdown is needed
     if (part.startsWith('*') && part.endsWith('*') && !part.startsWith('**')) {
-        return <em key={index}>{part.substring(1, part.length - 1)}</em>;
+        return <em key={`${index}-${part.substring(0, 5)}`}>{part.substring(1, part.length - 1)}</em>;
     }
     return part; // Render as plain text
   });
@@ -49,7 +49,7 @@ export default function ChatInterface() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null);
+  const [parsedResumeText, setParsedResumeText] = useState<string | null>(null); // null means not checked, "" means checked and no valid resume
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
@@ -77,27 +77,25 @@ export default function ChatInterface() {
            )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
-          if (!fromEvent) {
-             setResumeError(null);
-          } else {
-            // If from event, ensure previous errors are cleared if any existed.
-            if (resumeError) setResumeError(null);
-          }
+          setResumeError(null); 
         } else {
           console.warn("Stored resume data is invalid or empty. Clearing from localStorage.");
           localStorage.removeItem('parsedResumeData');
           if (!fromEvent) setResumeError("Your stored resume data was invalid. Please re-upload.");
           newParsedResumeTextContent = ""; // Ensure it's empty
+          resumeIsAvailable = false;
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
         if (!fromEvent) setResumeError("Could not load your resume data. Please re-upload.");
         newParsedResumeTextContent = ""; // Ensure it's empty
+        resumeIsAvailable = false;
       }
     } else {
        if (!fromEvent) setResumeError(null); // Clear error if no data found and not from an event
        newParsedResumeTextContent = "";
+       resumeIsAvailable = false;
     }
     setParsedResumeText(newParsedResumeTextContent);
 
@@ -105,25 +103,22 @@ export default function ChatInterface() {
         const uniqueInitialId = `ai-msg-initial-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        // Only add initial prompt if chat is empty AND it's an initial page load.
         if (isInitialPageLoad && prevMessages.length === 0) {
             return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
         }
-        // Add "Resume Ready" message ONLY if triggered by a resumeUpdated event, resume is now available,
-        // and the message isn't already the last one or AI isn't currently responding.
         else if (fromEvent && resumeIsAvailable) {
             const lastMessage = prevMessages[prevMessages.length - 1];
             if (!isLoading && (!lastMessage || lastMessage.text !== RESUME_READY_TEXT)) {
                  return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
             }
         }
-        return prevMessages; // Return existing messages if no changes are made
+        return prevMessages;
     });
   };
 
 
   useEffect(() => {
-    loadResumeData(true, false); // Initial load checks localStorage
+    loadResumeData(true, false); 
 
     const handleResumeUpdateEvent = () => {
       toast({
@@ -131,15 +126,15 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      setResumeError(null); // Clear any previous resume errors on successful upload
-      loadResumeData(false, true); // Load data, indicate it's from an event, potentially add RESUME_READY_TEXT
+      setResumeError(null); 
+      loadResumeData(false, true); 
     };
 
     const handleResumeUploadErrorEvent = (event: Event) => {
         const customEvent = event as CustomEvent<string>;
-        setResumeError(customEvent.detail); // Set the error from the event detail
-        setParsedResumeText(""); // Ensure resume text is cleared
-        localStorage.removeItem('parsedResumeData'); // Clear potentially bad data
+        setResumeError(customEvent.detail); 
+        setParsedResumeText(""); 
+        localStorage.removeItem('parsedResumeData'); 
          toast({
             title: "Resume Error",
             description: customEvent.detail,
@@ -156,7 +151,7 @@ export default function ChatInterface() {
       window.removeEventListener('resumeUploadError', handleResumeUploadErrorEvent);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array for one-time setup
+  }, []); 
 
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -168,7 +163,6 @@ export default function ChatInterface() {
 
   useEffect(() => {
     if (messages.length > 0 && !isDetailModalOpen) {
-      // Use 'auto' for immediate scroll on new message, 'smooth' could be for user actions
       scrollToBottom('auto');
     }
   }, [messages, isDetailModalOpen]);
@@ -176,8 +170,7 @@ export default function ChatInterface() {
   const handleScroll = () => {
     const viewport = scrollAreaRef.current?.querySelector('div[data-radix-scroll-area-viewport]');
     if (viewport) {
-      // Show button if not scrolled to bottom and there's scrollable content
-      const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop <= viewport.clientHeight + 50; // 50px tolerance
+      const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop <= viewport.clientHeight + 50; 
       setShowScrollToBottom(!isScrolledToBottom && viewport.scrollHeight > viewport.clientHeight);
     }
   };
@@ -197,19 +190,16 @@ export default function ChatInterface() {
     const currentQuery = inputValue;
     setInputValue('');
     setIsLoading(true);
-    setTimeout(() => scrollToBottom('smooth'), 50); // Optimistic scroll
+    setTimeout(() => scrollToBottom('smooth'), 50); 
 
 
     try {
-      // Step 1: Classify intent using the Genkit flow
       const intentResponse = await classifyUserIntent({ userQuery: currentQuery });
       const intent = intentResponse.intent;
       const resumeIsEffectivelyEmpty = !parsedResumeText || parsedResumeText.trim() === "";
 
-      // Handle general questions (RAG flow)
       if (intent === 'general_question') {
-        if(resumeIsEffectivelyEmpty && messages.length <= 2 && currentQuery.length < 20) {
-            // Check if the warning is already the last AI message
+        if(resumeIsEffectivelyEmpty && messages.length <= 2 && currentQuery.length < 20 && !currentQuery.toLowerCase().includes("resume")) {
             const lastAiMessage = messages.filter(m => m.sender === 'ai').pop();
             if(!lastAiMessage || lastAiMessage.text !== NO_RESUME_WARNING_TEXT_GENERAL_QUESTION) {
                  setMessages((prev) => [
@@ -224,7 +214,10 @@ export default function ChatInterface() {
             }
         }
 
-        const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
+        const aiRAGResponse = await contextualJobHelper({ 
+          userQuery: currentQuery,
+          resumeText: parsedResumeText || undefined,
+        });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-${Date.now()}`,
           sender: 'ai',
@@ -235,10 +228,8 @@ export default function ChatInterface() {
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
       } 
-      // Handle job search requests
       else if (intent === 'job_search') {
         if (resumeIsEffectivelyEmpty) {
-            // Avoid duplicate "upload resume" messages
             setMessages(prev => {
                 const lastMessage = prev.filter(m => m.sender === 'ai').pop();
                 if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH) return prev;
@@ -254,7 +245,7 @@ export default function ChatInterface() {
         }
 
         const aiJobResponse = await jobRecommendation({
-          resumeText: parsedResumeText || "No resume provided.", // Should not happen due to check above
+          resumeText: parsedResumeText || "No resume provided.",
           userPreferences: currentQuery,
         });
 
@@ -279,9 +270,11 @@ export default function ChatInterface() {
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
       } else {
-        // Fallback for safety, e.g., if intent classifier returns something unexpected
         console.warn(`Unexpected intent: ${intent}. Defaulting to general question (RAG).`);
-        const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
+        const aiRAGResponse = await contextualJobHelper({ 
+          userQuery: currentQuery,
+          resumeText: parsedResumeText || undefined,
+        });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-default-${Date.now()}`,
           sender: 'ai',
@@ -313,51 +306,10 @@ export default function ChatInterface() {
     }
   };
 
-  // Chat input should be disabled if:
-  // 1. AI is loading a response.
-  // 2. No resume has been parsed yet (parsedResumeText is null or empty string) AND
-  //    the last AI message isn't explicitly asking for a general question or saying resume is needed for general advice.
-  //    This allows general questions even without a resume, but job searches are blocked.
-  const resumeIsEffectivelyEmpty = !parsedResumeText || parsedResumeText.trim() === "";
-  let isChatInputEffectivelyDisabled = isLoading;
-
-  if (!isLoading && resumeIsEffectivelyEmpty) {
-    const lastMessage = messages[messages.length - 1];
-    // If resume is empty, input is disabled UNLESS the last message was a warning that allows general questions
-    // OR if the chat is empty (meaning only initial prompt is there).
-    if (
-      (!lastMessage || (lastMessage.sender === 'ai' && 
-        lastMessage.text !== NO_RESUME_WARNING_TEXT_GENERAL_QUESTION &&
-        lastMessage.text !== INITIAL_PROMPT_TEXT && // allow typing after initial prompt
-        lastMessage.text !== RESUME_READY_TEXT // allow typing after resume is ready
-        )) &&
-      messages.length > 1 // Don't disable if only INITIAL_PROMPT_TEXT is present
-    ) {
-        // More precise: disable if last AI message IS the job search warning.
-        if (lastMessage && lastMessage.sender === 'ai' && lastMessage.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH) {
-             isChatInputEffectivelyDisabled = true;
-        } else if (messages.length === 0 || (messages.length === 1 && messages[0].text === INITIAL_PROMPT_TEXT)) {
-            // Allow typing if it's just the initial prompt
-            isChatInputEffectivelyDisabled = false;
-        } else if (!lastMessage || lastMessage.sender === 'user' || (lastMessage.sender === 'ai' && lastMessage.text !== NO_RESUME_WARNING_TEXT_GENERAL_QUESTION)){
-            // If last AI message is not the one allowing general questions, and resume is empty, consider disabling.
-            // However, if intent is general_question, we allow it.
-            // This is tricky, intent is known only AFTER submit.
-            // Simplification: If resume is empty, and user *could* be asking for job search, disable.
-            // The NO_RESUME_WARNING_TEXT_JOB_SEARCH covers this.
-        }
-    }
-     // If resume is empty and the only message is initial prompt, don't disable
-    if (resumeIsEffectivelyEmpty && messages.length === 1 && messages[0].text === INITIAL_PROMPT_TEXT) {
-        isChatInputEffectivelyDisabled = false;
-    } else if (resumeIsEffectivelyEmpty && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH) {
-        isChatInputEffectivelyDisabled = true;
-    } else if (isLoading) {
-        isChatInputEffectivelyDisabled = true;
-    }
-
-
-  }
+  const isChatInputDisabled = 
+    isLoading || 
+    parsedResumeText === null || // Not yet checked localStorage
+    (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH);
 
 
   return (
@@ -379,7 +331,7 @@ export default function ChatInterface() {
             )}
             {messages.map((message, msgIdx) => (
               <div
-                key={`${message.id}-${msgIdx}-chatmsg-${message.sender}`}
+                key={`${message.id}-${msgIdx}-${message.sender}-${message.text.substring(0,10)}`}
                 className={`flex items-end gap-2.5 animate-fadeInUp`}
                 style={{ animationDelay: `${Math.min(msgIdx * 0.05, 0.5)}s`}}
               >
@@ -406,7 +358,7 @@ export default function ChatInterface() {
                       </summary>
                       <ul className="list-disc pl-4 mt-1 space-y-1 opacity-80">
                         {message.retrievedContextItems.map((item, idx) => (
-                          <li key={`context-${idx}`} className="break-words">{item}</li>
+                          <li key={`context-${message.id}-${idx}`} className="break-words">{item}</li>
                         ))}
                       </ul>
                     </details>
@@ -429,16 +381,15 @@ export default function ChatInterface() {
 
                         let dataAiHintForPlaceholder = "company logo";
                         if (job.company) {
-                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w));
+                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w)); // filter for alphanumeric words
                             if (words.length > 0) {
-                                dataAiHintForPlaceholder = words[0].substring(0,15);
+                                dataAiHintForPlaceholder = words[0].substring(0,15); // first word, max 15 chars
                                 if (words.length > 1 && words[1]) {
-                                    const combined = `${words[0].substring(0,10)} ${words[1].substring(0,9)}`.trim();
+                                    const combined = `${words[0].substring(0,10)} ${words[1].substring(0,9)}`.trim(); // first two words, combined max 20 chars
                                     if (combined.length <= 20 && combined.length > 0) dataAiHintForPlaceholder = combined;
                                 }
-                                if (dataAiHintForPlaceholder.length === 0 && words[0]) dataAiHintForPlaceholder = words[0].substring(0,15);
                             }
-                            if(dataAiHintForPlaceholder.length === 0) dataAiHintForPlaceholder = "company"; // ultimate fallback
+                            if(dataAiHintForPlaceholder.length === 0 || dataAiHintForPlaceholder === "logo") dataAiHintForPlaceholder = "company"; // ultimate fallback
                         }
 
 
@@ -537,13 +488,13 @@ export default function ChatInterface() {
           <form onSubmit={handleSubmit} className="flex w-full items-center gap-3">
             <Input
               type="text"
-              placeholder={isChatInputEffectivelyDisabled ? "Upload your resume first to find jobs..." : "Ask a career question or describe jobs..."}
+              placeholder={isChatInputDisabled ? "Upload your resume first..." : "Ask a career question or describe jobs..."}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50 bg-background placeholder:text-muted-foreground/80"
-              disabled={isChatInputEffectivelyDisabled}
+              disabled={isChatInputDisabled}
             />
-            <Button type="submit" size="icon" disabled={isChatInputEffectivelyDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
+            <Button type="submit" size="icon" disabled={isChatInputDisabled || !inputValue.trim()} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
               <SendHorizonal className="h-5 w-5" />
               <span className="sr-only">Send message</span>
             </Button>
@@ -558,4 +509,3 @@ export default function ChatInterface() {
     </>
   );
 }
-
