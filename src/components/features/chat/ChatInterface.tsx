@@ -13,7 +13,7 @@ import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation';
 import { contextualJobHelper } from '@/ai/flows/contextual-job-helper-flow';
-import { classifyUserIntent } from '@/ai/flows/intent-classifier-flow'; // New import
+import { classifyUserIntent } from '@/ai/flows/intent-classifier-flow';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import JobDetailModal from './JobDetailModal';
@@ -22,7 +22,21 @@ import { useToast } from '@/hooks/use-toast';
 
 const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search or answer your career questions today?";
 const INITIAL_PROMPT_TEXT = "Hello! Upload your resume so I can assist you with personalized job recommendations and answer your career questions.";
-const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page. You can still ask general career questions.";
+const NO_RESUME_WARNING_TEXT_JOB_SEARCH = "To get personalized job recommendations, please upload your resume using the form on this page. You can still ask general career questions.";
+const NO_RESUME_WARNING_TEXT_GENERAL_QUESTION = "For the best advice, please upload your resume. However, I can still answer general career questions.";
+
+
+// Utility function to render text with **bold** formatting
+function renderFormattedText(text: string): React.ReactNode[] {
+  if (!text) return [];
+  const parts = text.split(/(\*\*.*?\*\*)/g); // Split by **bolded text**, keeping the delimiters
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.substring(2, part.length - 2)}</strong>;
+    }
+    return part; // Render as plain text
+  });
+}
 
 
 export default function ChatInterface() {
@@ -58,9 +72,9 @@ export default function ChatInterface() {
            )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
-          // Only clear resumeError if we successfully load and validate data
-          // This prevents clearing a manual error set by an upload failure if localStorage still had old, valid data.
-          if (!fromEvent) setResumeError(null); // Clear only if not part of an upload event
+          if (!fromEvent) { // Only clear error if not triggered by an event that might set its own error
+             setResumeError(null);
+          }
         } else {
           console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
@@ -74,29 +88,24 @@ export default function ChatInterface() {
         newParsedResumeTextContent = "";
       }
     } else {
-       if (!fromEvent) setResumeError(null); // Clear error if no resume data in storage and not an upload event.
+       if (!fromEvent) setResumeError(null);
        newParsedResumeTextContent = "";
     }
-
     setParsedResumeText(newParsedResumeTextContent);
 
     setMessages(prevMessages => {
       const uniqueInitialId = `ai-msg-initial-${Date.now()}-${Math.random()}`;
       const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}-${Math.random()}`;
 
+      // Ensure initial prompt is only added if chat is truly empty on initial load
       if (isInitialPageLoad && prevMessages.length === 0) {
         return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
-      } else if (fromEvent && resumeIsAvailable) { // Only add "Resume Ready" text if triggered by the event
+      }
+      // Add "Resume Ready" message only if triggered by a resumeUpdated event and resume is now available
+      else if (fromEvent && resumeIsAvailable) {
         const lastMessage = prevMessages[prevMessages.length - 1];
-        // Check if the RESUME_READY_TEXT is already the last message to avoid duplicates from rapid events
-        if (lastMessage?.sender === 'ai' && lastMessage.text === RESUME_READY_TEXT) {
-            return prevMessages;
-        }
-        // Also avoid adding if the flow is: INITIAL_PROMPT -> user message -> RESUME_READY (if resume was uploaded before user typed)
-        // It's better to just let the AI respond to the user's query after resume is ready.
-        // Let's simplify: only add resume ready text if no user message is pending a response.
-        // Or, if chat is empty besides initial prompt.
-        if (prevMessages.length <= 1 || (lastMessage?.sender === 'ai' && !isLoading)) {
+        // Avoid adding if already the last message or if loading (AI is about to respond to user)
+        if (!isLoading && (!lastMessage || lastMessage.text !== RESUME_READY_TEXT)) {
              return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
@@ -118,9 +127,25 @@ export default function ChatInterface() {
       loadResumeData(false, true); // Load data, indicate it's from an event
     };
 
+    const handleResumeUploadErrorEvent = (event: Event) => {
+        const customEvent = event as CustomEvent<string>;
+        setResumeError(customEvent.detail);
+        setParsedResumeText(""); // Ensure resume text is cleared
+        localStorage.removeItem('parsedResumeData'); // Clear potentially bad data
+         toast({
+            title: "Resume Error",
+            description: customEvent.detail,
+            variant: "destructive",
+        });
+    };
+
+
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
+    window.addEventListener('resumeUploadError', handleResumeUploadErrorEvent);
+
     return () => {
       window.removeEventListener('resumeUpdated', handleResumeUpdateEvent);
+      window.removeEventListener('resumeUploadError', handleResumeUploadErrorEvent);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -162,13 +187,31 @@ export default function ChatInterface() {
     const currentQuery = inputValue;
     setInputValue('');
     setIsLoading(true);
+    // Optimistically scroll down
+    setTimeout(() => scrollToBottom('smooth'), 50);
+
 
     try {
       // Step 1: Classify intent
       const intentResponse = await classifyUserIntent({ userQuery: currentQuery });
       const intent = intentResponse.intent;
+      const resumeIsEffectivelyEmpty = !parsedResumeText || parsedResumeText.trim() === "";
 
       if (intent === 'general_question') {
+        if(resumeIsEffectivelyEmpty && messages.length <= 2 && currentQuery.length < 20) { // Heuristic: if no resume & short query, might need resume
+            const lastAiMessage = messages.find(m => m.sender === 'ai' && m.text === NO_RESUME_WARNING_TEXT_GENERAL_QUESTION);
+            if(!lastAiMessage) {
+                 setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: `ai-warn-resume-general-${Date.now()}`,
+                        sender: 'ai',
+                        text: NO_RESUME_WARNING_TEXT_GENERAL_QUESTION,
+                        timestamp: new Date(),
+                    },
+                ]);
+            }
+        }
         const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-${Date.now()}`,
@@ -180,14 +223,15 @@ export default function ChatInterface() {
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
       } else if (intent === 'job_search') {
-        if (!parsedResumeText || parsedResumeText.trim() === "") {
+        if (resumeIsEffectivelyEmpty) {
+            // Avoid duplicate "upload resume" messages if it's already the last one
             setMessages(prev => {
                 const lastMessage = prev[prev.length -1];
-                if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev;
+                if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH && lastMessage.sender === 'ai') return prev;
                 return [...prev, {
                     id: `ai-err-no-resume-${Date.now()}`,
                     sender: 'ai',
-                    text: NO_RESUME_WARNING_TEXT,
+                    text: NO_RESUME_WARNING_TEXT_JOB_SEARCH,
                     timestamp: new Date(),
                 }];
             });
@@ -196,7 +240,7 @@ export default function ChatInterface() {
         }
 
         const aiJobResponse = await jobRecommendation({
-          resumeText: parsedResumeText || "No resume provided.", // Should be caught by above check
+          resumeText: parsedResumeText || "No resume provided.",
           userPreferences: currentQuery,
         });
 
@@ -220,7 +264,7 @@ export default function ChatInterface() {
         };
         setMessages((prevMessages) => [...prevMessages, aiMessage]);
       } else {
-        // Fallback for safety, though the intent classifier should always return one of the two
+        // Fallback for safety
         console.warn(`Unexpected intent: ${intent}. Defaulting to general question.`);
         const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
         const aiMessage: ChatMessage = {
@@ -254,7 +298,8 @@ export default function ChatInterface() {
     }
   };
 
-  const isChatInputDisabled = isLoading || (parsedResumeText === null) || (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT && !messages[messages.length-1]?.isRAGResponse);
+  const isChatInputDisabled = isLoading || (!parsedResumeText && messages.length > 0 && (messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT_JOB_SEARCH || messages[messages.length-1]?.text === INITIAL_PROMPT_TEXT));
+
 
   return (
     <>
@@ -291,7 +336,9 @@ export default function ChatInterface() {
                       : 'bg-card text-card-foreground border border-border rounded-bl-none'
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words">{message.text}</p>
+                  <p className="text-sm whitespace-pre-wrap break-words">
+                    {message.sender === 'ai' ? renderFormattedText(message.text) : message.text}
+                  </p>
 
                   {message.isRAGResponse && message.retrievedContextItems && message.retrievedContextItems.length > 0 && (
                     <details className="mt-2 text-xs">
@@ -327,7 +374,7 @@ export default function ChatInterface() {
                             if (words.length > 0) {
                                 dataAiHintForPlaceholder = words[0].substring(0,15);
                                 if (words.length > 1 && words[1]) {
-                                    const combined = `${words[0]} ${words[1]}`;
+                                    const combined = `${words[0].substring(0,10)} ${words[1].substring(0,9)}`.trim();
                                     if (combined.length <= 20) dataAiHintForPlaceholder = combined;
                                 }
                             }
@@ -450,3 +497,4 @@ export default function ChatInterface() {
     </>
   );
 }
+
