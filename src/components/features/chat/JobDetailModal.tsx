@@ -33,7 +33,7 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
         <DialogHeader className="p-6 pb-4 border-b sticky top-0 bg-background z-10">
           <DialogTitle className="text-2xl font-bold text-primary">{job.title || 'Job Title Not Available'}</DialogTitle>
           <DialogDescription asChild className="text-sm pt-1">
-            <div className="space-y-1"> {/* This div will be rendered by DialogDescription */}
+            <div className="space-y-1">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Building size={16} />
                 <span>{job.company || 'Company Not Available'}</span>
@@ -46,12 +46,12 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6 py-4 overflow-y-auto">
-          <div className="space-y-6">
+        <ScrollArea className="flex-1 overflow-y-auto"> {/* Removed px-6 py-4 from here */}
+          <div className="space-y-6 px-6 py-4"> {/* Added px-6 py-4 here */}
             {job.summary && (
                 <div>
                     <h4 className="font-semibold text-lg mb-1.5 text-foreground">Summary</h4>
-                    <p className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-md leading-relaxed">{job.summary}</p>
+                    <p className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-md leading-relaxed">{job.summary || 'Not Available'}</p>
                 </div>
             )}
             
