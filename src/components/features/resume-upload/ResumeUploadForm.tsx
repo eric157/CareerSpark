@@ -8,15 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, AlertTriangle, Loader2, ListChecks, Briefcase, GraduationCap } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Loader2, ListChecks } from 'lucide-react';
 import { parseResume, type ParseResumeOutput } from '@/ai/flows/resume-parsing';
-// useRouter is not needed if we're not redirecting
 import { useToast } from '@/hooks/use-toast';
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-
 
 export default function ResumeUploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -24,7 +22,6 @@ export default function ResumeUploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParseResumeOutput | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  // const router = useRouter(); // Not redirecting anymore
   const { toast } = useToast();
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -71,31 +68,38 @@ export default function ResumeUploadForm() {
           setParsedData(result);
           localStorage.setItem('parsedResumeData', JSON.stringify(result)); 
           
-          // Dispatch a custom event to notify ChatInterface
           window.dispatchEvent(new CustomEvent('resumeUpdated'));
 
           toast({
             title: "Resume Parsed Successfully!",
-            description: "Your profile has been updated. You can now chat with the AI.",
-            variant: "default",
-            duration: 5000,
+            description: "Your key skills have been extracted. You can now chat with the AI for personalized job recommendations.",
+            variant: "default", // Will use the new theme
+            duration: 6000,
           });
-          setFile(null); // Clear the file input
-          // document.getElementById('resumeFile') as HTMLInputElement).value = ''; // More direct way to clear
+          
+          // Clear the file input visually by resetting the form element it's part of or by resetting its value if possible
+          const fileInput = document.getElementById('resumeFile') as HTMLInputElement;
+          if (fileInput) {
+            fileInput.value = ''; // This attempts to clear the file input
+          }
+          setFile(null); // Clear the file state
+          
         } catch (aiError) {
           console.error('AI parsing error:', aiError);
           setError('Failed to parse resume. Please try again or use a different file.');
           toast({
             title: "Parsing Error",
-            description: "There was an issue parsing your resume. Please try again.",
+            description: "There was an issue parsing your resume. Please check the file and try again.",
             variant: "destructive",
           });
         } finally {
           setIsLoading(false);
+          // Keep progress at 100 if successful, or reset if error occurred before 100
+          if (!parsedData && !result) setUploadProgress(0); 
         }
       };
       reader.onerror = () => {
-        setError('Failed to read file.');
+        setError('Failed to read file. Please ensure it is not corrupted.');
         setIsLoading(false);
         setUploadProgress(0);
       };
@@ -111,39 +115,43 @@ export default function ResumeUploadForm() {
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <Label htmlFor="resumeFile" className="text-sm font-medium">Resume File</Label>
+          <Label htmlFor="resumeFile" className="block text-sm font-medium text-foreground mb-1.5">Select Resume File</Label>
           <Input
             id="resumeFile"
             type="file"
             onChange={handleFileChange}
             accept=".pdf,.docx"
-            className="mt-1 text-sm file:text-primary file:font-semibold file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-primary/10 hover:file:bg-primary/20"
+            className="mt-1 text-sm file:text-primary file:font-semibold file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary/10 hover:file:bg-primary/20 transition-colors duration-200 shadow-sm focus:ring-2 focus:ring-primary/50 focus:border-primary"
             disabled={isLoading}
           />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1.5 text-xs text-muted-foreground">
             Supported formats: PDF, DOCX. Max size: {MAX_FILE_SIZE_MB}MB.
           </p>
         </div>
         {isLoading && (
-          <div className="space-y-2">
-            <Progress value={uploadProgress} className="w-full h-2" />
-            <p className="text-sm text-primary flex items-center">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <div className="space-y-2 pt-2">
+            <Progress value={uploadProgress} className="w-full h-2.5 rounded-full [&>div]:rounded-full" />
+            <p className="text-sm text-primary flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
               Processing your resume... This may take a moment.
             </p>
           </div>
         )}
         {error && (
-          <Alert variant="destructive" className="mt-2">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Upload Error</AlertTitle>
+          <Alert variant="destructive" className="mt-2 shadow-md">
+            <AlertTriangle className="h-5 w-5" />
+            <AlertTitle className="font-semibold">Upload Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <Button type="submit" disabled={isLoading || !file} className="w-full sm:w-auto text-sm py-2 px-4">
+        <Button 
+          type="submit" 
+          disabled={isLoading || !file} 
+          className="w-full sm:w-auto text-sm py-2.5 px-6 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
+        >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
             </>
           ) : (
             'Analyze Resume'
@@ -152,35 +160,35 @@ export default function ResumeUploadForm() {
       </form>
 
       {parsedData && !isLoading && (
-        <Card className="mt-6 border-primary/50 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-md flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
+        <Card className="mt-6 border-primary/30 shadow-lg bg-gradient-to-br from-card to-secondary/10 animate-fadeInUp">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2 text-green-600 dark:text-green-500">
+              <CheckCircle className="h-6 w-6" />
               Resume Analysis Complete!
             </CardTitle>
             <CardDescription className="text-xs">
-              This extracted information is now being used for personalized job matching in the chat.
+              Key information extracted. Ready for personalized job matching in the chat!
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm pt-2">
             <div>
-              <h3 className="text-xs font-semibold mb-1 flex items-center gap-1"><ListChecks className="text-accent h-4 w-4"/>Skills Extracted:</h3>
+              <h3 className="text-xs font-semibold mb-1.5 flex items-center gap-1.5 text-primary">
+                <ListChecks className="h-4 w-4"/> Top Skills Extracted:
+              </h3>
               {parsedData.skills.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {parsedData.skills.slice(0, 5).map((skill, index) => ( // Show a few skills
-                    <span key={index} className="bg-secondary/50 text-secondary-foreground/80 text-xs px-2 py-0.5 rounded-full">
+                <div className="flex flex-wrap gap-1.5">
+                  {parsedData.skills.slice(0, 7).map((skill, index) => ( 
+                    <span key={index} className="bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary/90 text-xs font-medium px-2.5 py-1 rounded-full shadow-sm">
                       {skill}
                     </span>
                   ))}
-                  {parsedData.skills.length > 5 && <span className="text-xs text-muted-foreground">...and more.</span>}
+                  {parsedData.skills.length > 7 && <span className="text-xs text-muted-foreground italic mt-1">...and more.</span>}
                 </div>
-              ) : <p className="text-xs text-muted-foreground">No skills prominently extracted.</p>}
+              ) : <p className="text-xs text-muted-foreground">No prominent skills extracted. Try a different resume or ensure skills are clearly listed.</p>}
             </div>
-            {/* Can add similar brief sections for experience and education if desired */}
           </CardContent>
         </Card>
       )}
     </div>
   );
 }
-

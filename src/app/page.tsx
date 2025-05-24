@@ -3,43 +3,47 @@ import ChatInterface from '@/components/features/chat/ChatInterface';
 import ResumeUploadForm from '@/components/features/resume-upload/ResumeUploadForm';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { UploadCloud } from 'lucide-react';
+import { UploadCloud, MessageSquareText } from 'lucide-react';
 
 export default function DashboardPage() {
   return (
-    <div className="flex flex-col gap-8">
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-3xl font-bold tracking-tight">Welcome to Career Spark!</CardTitle>
-          <CardDescription className="text-lg">
-            Your AI-powered co-pilot for navigating the job market.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p>
-            Start by uploading your resume below. Then, use the chat to tell me about your career goals or ask for job recommendations.
-          </p>
-        </CardContent>
-      </Card>
+    <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
+      <header className="mb-12 text-center">
+        <h1 className="text-5xl font-extrabold tracking-tight text-primary mb-3 animate-fadeInUp" style={{ animationDelay: '0.1s' }}>
+          Career Spark
+        </h1>
+        <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fadeInUp" style={{ animationDelay: '0.2s' }}>
+          Ignite your job search with AI-powered resume analysis and personalized recommendations.
+        </p>
+      </header>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-xl flex items-center gap-2">
-             <UploadCloud className="h-6 w-6 text-primary" />
-             Upload & Analyze Your Resume
-          </CardTitle>
-          <CardDescription>
-            Provide your resume (PDF or DOCX) so the AI can give you personalized job matches.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResumeUploadForm />
-        </CardContent>
-      </Card>
-      
-      <Separator />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        <div className="lg:col-span-2 space-y-8">
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300 animate-fadeInUp" style={{ animationDelay: '0.3s' }}>
+            <CardHeader>
+              <CardTitle className="text-2xl font-semibold flex items-center gap-3">
+                 <UploadCloud className="h-7 w-7 text-primary" />
+                 Upload & Analyze Resume
+              </CardTitle>
+              <CardDescription className="text-sm">
+                Provide your resume (PDF or DOCX). Our AI will extract key info to tailor job matches specifically for you.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResumeUploadForm />
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div className="lg:col-span-3 animate-fadeInUp" style={{ animationDelay: '0.4s' }}>
+          <ChatInterface />
+        </div>
+      </div>
 
-      <ChatInterface />
+      <footer className="mt-16 text-center text-muted-foreground text-sm animate-fadeInUp" style={{ animationDelay: '0.5s' }}>
+        <p>&copy; {new Date().getFullYear()} Career Spark. Your AI Career Co-pilot.</p>
+        <p className="mt-1">Powered by Genkit and Next.js.</p>
+      </footer>
     </div>
   );
 }
