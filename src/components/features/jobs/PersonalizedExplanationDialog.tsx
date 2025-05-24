@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -10,14 +11,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react';
-import type { JobListing } from '@/types';
+import { Loader2, AlertTriangle, Sparkles } from 'lucide-react';
+import type { RecommendedJob } from '@/types'; // Changed from JobListing
 import { generatePersonalizedExplanation, type PersonalizedExplanationOutput } from '@/ai/flows/personalized-explanation';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
 interface PersonalizedExplanationDialogProps {
-  job: JobListing;
+  job: RecommendedJob; // Changed from JobListing
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -35,21 +36,18 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
         setExplanationData(null);
 
         try {
-          // Assume resume data and preferences are available (e.g., from localStorage or a store)
           const storedResumeData = localStorage.getItem('parsedResumeData');
           const resumeData = storedResumeData 
             ? JSON.parse(storedResumeData) 
             : { skills: [], experience: [], education: [] };
           
-          // Combine parsed resume data into a string format expected by the AI flow
-          const resumeString = `Skills: ${resumeData.skills.join(', ') || 'Not specified'}. Experience: ${resumeData.experience.join('; ') || 'Not specified'}. Education: ${resumeData.education.join('; ') || 'Not specified'}.`;
+          const resumeString = `Skills: ${resumeData.skills?.join(', ') || 'Not specified'}. Experience: ${resumeData.experience?.join('; ') || 'Not specified'}. Education: ${resumeData.education?.join('; ') || 'Not specified'}.`;
           
-          // User preferences could be collected from a form or profile settings
-          const userPreferences = "Interested in senior frontend roles, remote work, and innovative tech companies.";
+          const userPreferences = "Interested in senior frontend roles, remote work, and innovative tech companies."; // This could be dynamic
 
           const result = await generatePersonalizedExplanation({
             resumeData: resumeString,
-            jobDescription: job.description,
+            jobDescription: job.description, // RecommendedJob now has description
             userPreferences: userPreferences,
           });
           setExplanationData(result);
@@ -105,8 +103,6 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
               <div>
                 <h4 className="font-semibold text-lg mb-2 text-foreground">Why this job is a good match:</h4>
                 <div className="prose prose-sm max-w-none p-4 bg-secondary/30 rounded-md text-foreground">
-                  {/* Using dangerouslySetInnerHTML for potentially markdown formatted output, ensure sanitization if from untrusted source */}
-                  {/* For simplicity, treating as plain text now */}
                   <p style={{ whiteSpace: 'pre-line' }}>{explanationData.explanation}</p>
                 </div>
               </div>
@@ -129,3 +125,4 @@ export default function PersonalizedExplanationDialog({ job, isOpen, onOpenChang
     </Dialog>
   );
 }
+

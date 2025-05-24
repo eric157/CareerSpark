@@ -1,6 +1,7 @@
+
 'use client';
 
-import type { JobListing } from '@/types';
+import type { RecommendedJob } from '@/types'; // Changed from JobListing
 import JobCard from './JobCard';
 import { useState } from 'react';
 import PersonalizedExplanationDialog from './PersonalizedExplanationDialog';
@@ -8,13 +9,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
 
 interface JobListProps {
-  jobs: JobListing[];
+  jobs: RecommendedJob[]; // Changed from JobListing
 }
 
 export default function JobList({ jobs }: JobListProps) {
-  const [selectedJobForExplanation, setSelectedJobForExplanation] = useState<JobListing | null>(null);
+  const [selectedJobForExplanation, setSelectedJobForExplanation] = useState<RecommendedJob | null>(null); // Changed from JobListing
 
-  const handleViewExplanation = (job: JobListing) => {
+  const handleViewExplanation = (job: RecommendedJob) => { // Changed from JobListing
     setSelectedJobForExplanation(job);
   };
 
@@ -49,3 +50,4 @@ export default function JobList({ jobs }: JobListProps) {
     </div>
   );
 }
+

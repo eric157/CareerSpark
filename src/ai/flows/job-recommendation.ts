@@ -25,27 +25,31 @@ const JobRecommendationInputSchema = z.object({
 });
 export type JobRecommendationInput = z.infer<typeof JobRecommendationInputSchema>;
 
+const RecommendedJobSchema = z.object({
+  id: z.string().describe('A unique identifier for the job listing, derived from its source (e.g., SerpApi job_id).'),
+  title: z.string().describe('The title of the job.'),
+  company: z.string().describe('The company offering the job.'),
+  location: z.string().describe('The location of the job.'),
+  summary: z.string().describe('A brief summary of the job description or why it is a good match.'),
+  description: z.string().describe('The full job description. This can be the same as the summary if a more detailed description is not available from the source.'),
+  relevanceScore: z
+    .number()
+    .min(0).max(100)
+    .describe(
+      'A score indicating the relevance of the job to the user\'s resume and preferences (0-100).' +
+      ' Briefly explain why this job is a good match for the user as part of the summary.'
+    ),
+  source: z.string().optional().describe("Indicates if the job was from 'providedListings' or 'webSearch'."),
+  url: z.string().url().optional().describe("URL to the job posting, if found via web search."),
+  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28").'),
+  employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract").')
+});
+
 const JobRecommendationOutputSchema = z.object({
   recommendedJobs: z
-    .array(
-      z.object({
-        title: z.string().describe('The title of the job.'),
-        company: z.string().describe('The company offering the job.'),
-        location: z.string().describe('The location of the job.'),
-        summary: z.string().describe('A brief summary of the job description or why it is a good match.'),
-        relevanceScore: z
-          .number()
-          .min(0).max(100)
-          .describe(
-            'A score indicating the relevance of the job to the user\'s resume and preferences (0-100).' +
-            ' Briefly explain why this job is a good match for the user as part of the summary.'
-          ),
-        source: z.string().optional().describe("Indicates if the job was from 'providedListings' or 'webSearch'."),
-        url: z.string().url().optional().describe("URL to the job posting, if found via web search.")
-      })
-    )
+    .array(RecommendedJobSchema)
     .describe('A list of jobs recommended to the user, with relevance scores.'),
-  searchQueryUsed: z.string().optional().describe("If a web search was performed, this is the query that was used.")
+  searchQueryUsed: z.string().optional().describe("If a web search was performed, this is the query that was used. Omit this field entirely if no web search was performed.")
 });
 export type JobRecommendationOutput = z.infer<typeof JobRecommendationOutputSchema>;
 
@@ -79,10 +83,20 @@ Instructions:
 1. Analyze the user's resume and preferences.
 2. If no jobListings are provided, or if the provided listings do not seem sufficient or highly relevant based on user preferences, use the 'searchJobsTool' to find suitable job openings. Construct a concise and effective search query for the tool based on the user's resume and preferences (e.g., "software engineer remote typescript", "product manager fintech New York"). If you use the 'searchJobsTool', include the exact query you used in the 'searchQueryUsed' field of your output. If you do not use the 'searchJobsTool', omit the 'searchQueryUsed' field entirely from your output.
 3. From all available sources (provided listings and/or web search results), select up to 5 of the most relevant jobs.
-4. For each recommended job, provide a title, company, location, a summary explaining its relevance and why it's a good match, and a relevance score (0-100).
-5. Indicate the source of each job ('providedListings' or 'webSearch'). If from 'webSearch', include the job URL.
-6. If using the searchJobsTool, ensure the tool's output (job title, company, location, url, snippet) is used to populate the fields in the recommendedJobs array. The 'summary' field for web-searched jobs should combine the snippet with your reasoning for the match.
-7. Aim for high relevance. If no suitable jobs are found even after searching, return an empty recommendedJobs array.
+4. For each recommended job, provide:
+    - id: The unique identifier from the source (e.g., tool output's 'id' field).
+    - title: The job title.
+    - company: The company name.
+    - location: The job location.
+    - summary: A brief summary explaining its relevance and why it's a good match.
+    - description: The full job description from the source. If the source provides a snippet/summary, use that.
+    - relevanceScore: A score (0-100) indicating relevance.
+    - source: 'providedListings' or 'webSearch'.
+    - url: The URL to the job posting (if from 'webSearch').
+    - postedDate: The posting date, if available from the source.
+    - employmentType: The type of employment, if available from the source.
+5. If using the searchJobsTool, ensure the tool's output (id, title, company, location, url, description, postedDate, employmentType) is used to populate the fields in the recommendedJobs array. The 'summary' field for web-searched jobs should combine the tool's description/snippet with your reasoning for the match.
+6. Aim for high relevance. If no suitable jobs are found even after searching, return an empty recommendedJobs array.
 `,
 });
 

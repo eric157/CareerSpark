@@ -12,6 +12,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
 
 // Internal Schemas (not directly exported as constants)
 const JobSearchInputSchema = z.object({
@@ -22,11 +23,12 @@ const JobSearchInputSchema = z.object({
 export type JobSearchInput = z.infer<typeof JobSearchInputSchema>;
 
 const JobSearchResultSchema = z.object({
+  id: z.string().describe('A unique identifier for the job listing.'),
   title: z.string().describe('The job title.'),
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job.'),
   url: z.string().url().describe('A URL link to the job posting or a Google Jobs link.'),
-  snippet: z.string().optional().describe('A brief snippet or summary of the job.'),
+  description: z.string().optional().describe('A brief snippet or summary of the job, used as description.'), // Changed from snippet to description for clarity
   postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28").'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract").')
 });
@@ -86,35 +88,30 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
       return [];
     }
 
-    // Map the structure of `data.jobs_results` from SerpApi
-    // to the `JobSearchResultSchema`.
     return data.jobs_results.map((job: any) => {
       let jobUrl = job.link || job.related_links?.find((l:any) => l.link)?.link;
-      // Fallback to a Google search link if no direct link
       if (!jobUrl && job.job_id) {
         jobUrl = `https://www.google.com/search?q=${encodeURIComponent(input.query)}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htilrad=0&htidocid=${job.job_id}`;
       }
       
-      // Ensure URL is valid or provide a default if it's critical and missing
       try {
-        new URL(jobUrl); // validate URL
+        new URL(jobUrl); 
       } catch (e) {
         console.warn(`Invalid or missing URL for job "${job.title}", using placeholder. Original: ${jobUrl}`);
         jobUrl = `https://www.google.com/search?q=${encodeURIComponent(job.title || input.query)}+${encodeURIComponent(job.company_name || '')}`;
       }
 
-
       return {
+        id: job.job_id || uuidv4(), // Use job_id if available, otherwise generate a UUID
         title: job.title || 'N/A',
         company: job.company_name || 'N/A',
         location: job.location,
-        // Use a Google search for the job as a fallback URL if a direct link isn't obvious
         url: jobUrl,
-        snippet: job.description || job.snippet, // SerpApi often has 'description'
+        description: job.description || job.snippet, // Use description or snippet as the job description
         postedDate: job.detected_extensions?.posted_at,
         employmentType: job.detected_extensions?.schedule_type,
       };
-    }).filter((job: JobSearchResult) => job.url); // Ensure jobs have a URL
+    }).filter((job: JobSearchResult) => job.url); 
   
   } catch (error) {
     console.error('Failed to fetch jobs from SerpApi:', error);
@@ -122,14 +119,12 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
   }
 }
 
-// This function generates more dynamic mock results based on the query
-// Kept as a fallback or for when API key is missing.
 function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): JobSearchOutput {
   const results: JobSearchOutput = [];
   const queryKeywords = input.query.toLowerCase().split(' ').filter(kw => kw.length > 1);
   
   let baseTitle = "Software Engineer";
-  let baseCompany = "Tech Solutions Inc."; // Added Inc. for a bit more variety
+  let baseCompany = "Tech Solutions Inc.";
   let baseLocation = input.location || "Remote";
 
   if (queryKeywords.includes("manager")) baseTitle = "Product Manager";
@@ -138,13 +133,11 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
   if (queryKeywords.includes("analyst")) baseTitle = "Business Analyst";
   if (queryKeywords.includes("devops")) baseTitle = "DevOps Engineer";
 
-
   const locations = ["New York, NY", "San Francisco, CA", "Austin, TX", "Chicago, IL", "Boston, MA", "Seattle, WA", "London, UK", "Berlin, Germany", "Remote"];
   const companies = ["Innovatech", "FutureAI Dynamics", "CyberSec Corp Ltd.", "EcoWorld Solutions", "HealthFirst Digital", "QuantumLeap Tech"];
   const jobTypes = ["Full-time", "Contract", "Part-time", "Internship", "Temporary"];
 
   for (let i = 0; i < (input.numResults ?? 5); i++) {
-    // Try to extract a role from query, otherwise use baseTitle
     const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", "manager", "data", "ux", "ui", "analyst", "devops", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
     const dynamicRole = roleFromQuery ? (roleFromQuery.charAt(0).toUpperCase() + roleFromQuery.slice(1)) : baseTitle.split(' ')[0];
     
@@ -157,12 +150,13 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
     const jobUrl = `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${dynamicCompany.toLowerCase().replace(/\s+/g, '-')}-${i + 1}`;
 
     results.push({
+      id: uuidv4(), // Generate a unique ID for mock results
       title: dynamicTitle,
       company: dynamicCompany,
       location: dynamicLocation,
       url: jobUrl,
-      snippet: errorInfo ? `Could not fetch real jobs: ${errorInfo}. ` : `Seeking a talented ${dynamicTitle} for ${dynamicCompany} in ${dynamicLocation}. Key skills based on query: ${input.query}. This is a mock result.`,
-      postedDate: `${Math.floor(Math.random() * 20) + 1} days ago`, // More realistic mock date
+      description: errorInfo ? `Could not fetch real jobs: ${errorInfo}. ` : `Seeking a talented ${dynamicTitle} for ${dynamicCompany} in ${dynamicLocation}. Key skills based on query: ${input.query}. This is a mock result.`,
+      postedDate: `${Math.floor(Math.random() * 20) + 1} days ago`,
       employmentType: jobTypes[i % jobTypes.length]
     });
   }
@@ -173,7 +167,7 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
 export const searchJobsTool = ai.defineTool(
   {
     name: 'searchJobsTool',
-    description: 'Searches the web for job listings based on a query, and optionally a location. Use this to find current job openings if the user asks for jobs and no specific listings are provided, or if the provided listings are insufficient.',
+    description: 'Searches the web for job listings based on a query, and optionally a location. Use this to find current job openings if the user asks for jobs and no specific listings are provided, or if the provided listings are insufficient. Returns job details including ID, title, company, location, URL, description, posted date, and employment type.',
     inputSchema: JobSearchInputSchema,
     outputSchema: JobSearchOutputSchema,
   },

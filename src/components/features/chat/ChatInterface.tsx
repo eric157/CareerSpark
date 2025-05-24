@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'; // Removed AvatarImage as AI doesn't have one
 import { Paperclip, SendHorizonal, User, Cpu, Search } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,25 +13,16 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { jobRecommendation } from '@/ai/flows/job-recommendation'; 
 import { Skeleton } from '@/components/ui/skeleton';
-
-// Mock job listings for AI flow input - these can be used if the AI decides they are relevant
-// or it can use the new searchJobsTool to find others.
-const MOCK_PROVIDED_JOB_LISTINGS = [
-  "Software Engineer at Google, Mountain View, CA. Experience with Java, Python, C++. B.S. in Computer Science.",
-  "Product Manager at Microsoft, Redmond, WA. 5+ years experience in product management. MBA preferred.",
-  "UX Designer at Apple, Cupertino, CA. Portfolio required. Strong understanding of user-centered design principles.",
-  "Data Scientist at Amazon, Seattle, WA. PhD or M.S. in a quantitative field. Experience with machine learning.",
-];
+import Image from 'next/image'; // For job card images
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [parsedResumeText, setParsedResumeText] = useState<string>("Experienced software engineer with skills in React, Node.js, and Python. Interested in remote work. Focus on web development roles.");
+  const [parsedResumeText, setParsedResumeText] = useState<string>("Seeking opportunities. Please upload resume for personalized results.");
 
   useEffect(() => {
-    // Load parsed resume data from localStorage if available
     const storedResumeData = localStorage.getItem('parsedResumeData');
     if (storedResumeData) {
       try {
@@ -73,17 +64,15 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      // Use jobRecommendation flow for job-related queries
-      // The flow will decide whether to use provided listings or search via the tool
       const aiResponse = await jobRecommendation({
         resumeText: parsedResumeText, 
-        userPreferences: userMessage.text, // Use user's query as preference
-        jobListings: MOCK_PROVIDED_JOB_LISTINGS, // Provide some initial listings
+        userPreferences: userMessage.text,
+        jobListings: undefined, // No longer passing mock listings
       });
       
       let responseText = aiResponse.recommendedJobs.length > 0 
         ? "Here are some job recommendations based on your query:" 
-        : "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.";
+        : "I couldn't find specific jobs for that query right now using web search. Try rephrasing or broadening your search. Ensure your resume is uploaded for best results.";
 
       if (aiResponse.searchQueryUsed) {
         responseText += ` (I searched for: "${aiResponse.searchQueryUsed}")`;
@@ -149,10 +138,26 @@ export default function ChatInterface() {
                 )}
                 {message.relatedJobs && message.relatedJobs.length > 0 && (
                   <div className="mt-3 space-y-2">
-                    {message.relatedJobs.map((job, index) => (
-                       <Card key={index} className="bg-background/70 p-3">
-                        <h4 className="font-semibold text-sm">{job.title}</h4>
-                        <p className="text-xs text-muted-foreground">{job.company} - {job.location}</p>
+                    {message.relatedJobs.map((job, index) => {
+                       const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
+                       const placeholderImageUrl = `https://placehold.co/40x40.png?text=${encodeURIComponent(companyInitials)}`;
+                       const dataAiHintForPlaceholder = job.company?.split(' ')[0]?.toLowerCase() || "company logo";
+                       
+                       return (
+                       <Card key={job.id || index} className="bg-background/70 p-3">
+                        <div className="flex items-start gap-2">
+                          <Image 
+                            src={placeholderImageUrl} 
+                            alt={job.company || 'company'} 
+                            width={40} height={40} 
+                            className="rounded-md border object-contain bg-muted"
+                            data-ai-hint={dataAiHintForPlaceholder}
+                          />
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-sm">{job.title}</h4>
+                            <p className="text-xs text-muted-foreground">{job.company} - {job.location}</p>
+                          </div>
+                        </div>
                         <p className="text-xs mt-1 line-clamp-2">{job.summary}</p>
                         <div className="flex justify-between items-center mt-1">
                           <Badge variant={job.relevanceScore > 70 ? "default" : job.relevanceScore > 40 ? "secondary" : "destructive"} className="text-xs">Relevance: {job.relevanceScore}%</Badge>
@@ -163,12 +168,13 @@ export default function ChatInterface() {
                              <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Original Post</Button>
                            </a>
                         ) : (
-                          <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}`} passHref>
-                           <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Details</Button>
-                          </Link>
+                           <Link href={`/jobs?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || '')}`} passHref>
+                             <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary">View Details</Button>
+                           </Link>
                         )}
                       </Card>
-                    ))}
+                       );
+                    })}
                   </div>
                 )}
                 <p className="mt-1 text-xs opacity-70">
@@ -220,3 +226,4 @@ export default function ChatInterface() {
     </Card>
   );
 }
+
