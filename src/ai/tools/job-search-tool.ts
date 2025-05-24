@@ -28,7 +28,7 @@ const JobSearchResultSchema = z.object({
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job.'),
   url: z.string().url().describe('A URL link to the job posting or a Google Jobs link.'),
-  description: z.string().optional().describe('A brief snippet or summary of the job, used as description.'), // Changed from snippet to description for clarity
+  description: z.string().optional().describe('A brief snippet or summary of the job, used as description.'),
   postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28").'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract").')
 });
@@ -105,11 +105,11 @@ async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOut
         id: job.job_id || uuidv4(), // Use job_id if available, otherwise generate a UUID
         title: job.title || 'N/A',
         company: job.company_name || 'N/A',
-        location: job.location,
+        location: job.location, // SerpApi usually provides this; if not, it will be undefined
         url: jobUrl,
         description: job.description || job.snippet, // Use description or snippet as the job description
-        postedDate: job.detected_extensions?.posted_at,
-        employmentType: job.detected_extensions?.schedule_type,
+        postedDate: job.detected_extensions?.posted_at || undefined, // Ensure null becomes undefined
+        employmentType: job.detected_extensions?.schedule_type || undefined, // Ensure null becomes undefined
       };
     }).filter((job: JobSearchResult) => job.url); 
   
@@ -125,7 +125,6 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
   
   let baseTitle = "Software Engineer";
   let baseCompany = "Tech Solutions Inc.";
-  let baseLocation = input.location || "Remote";
 
   if (queryKeywords.includes("manager")) baseTitle = "Product Manager";
   if (queryKeywords.includes("data")) baseTitle = "Data Scientist";
@@ -146,7 +145,6 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
     
     const dynamicCompany = `${companies[i % companies.length]} ${queryKeywords.includes("startup") ? "Startup Division" : (i % 2 === 0 ? "Global" : "Ventures")}`;
     const dynamicLocation = input.location || locations[i % locations.length];
-    const postedDate = new Date(Date.now() - (i * 24 * 60 * 60 * 1000) - (Math.random() * 10 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
     const jobUrl = `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${dynamicCompany.toLowerCase().replace(/\s+/g, '-')}-${i + 1}`;
 
     results.push({

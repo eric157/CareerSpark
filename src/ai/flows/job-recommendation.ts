@@ -41,8 +41,8 @@ const RecommendedJobSchema = z.object({
     ),
   source: z.string().optional().describe("Indicates if the job was from 'providedListings' or 'webSearch'."),
   url: z.string().url().optional().describe("URL to the job posting, if found via web search."),
-  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28").'),
-  employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract").')
+  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28"). If not available as a string, omit this field.'),
+  employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract"). If not available as a string, omit this field.')
 });
 
 const JobRecommendationOutputSchema = z.object({
@@ -87,14 +87,14 @@ Instructions:
     - id: The unique identifier from the source (e.g., tool output's 'id' field).
     - title: The job title.
     - company: The company name.
-    - location: The job location.
+    - location: The job location. If the location is not specified or known, use a general term like "Various locations" or "Not specified", but always include the location field.
     - summary: A brief summary explaining its relevance and why it's a good match.
     - description: The full job description from the source. If the source provides a snippet/summary, use that.
     - relevanceScore: A score (0-100) indicating relevance.
     - source: 'providedListings' or 'webSearch'.
-    - url: The URL to the job posting (if from 'webSearch').
-    - postedDate: The posting date, if available from the source.
-    - employmentType: The type of employment, if available from the source.
+    - url: The URL to the job posting (if from 'webSearch'). If no URL is available from the source, omit this field.
+    - postedDate: The posting date, if available from the source as a string (e.g., "2 days ago", "2024-07-28"). If not available as a string or not provided by the source, omit this field entirely. Do not use 'null'.
+    - employmentType: The type of employment, if available from the source as a string (e.g., "Full-time", "Contract"). If not available as a string or not provided by the source, omit this field entirely. Do not use 'null'.
 5. If using the searchJobsTool, ensure the tool's output (id, title, company, location, url, description, postedDate, employmentType) is used to populate the fields in the recommendedJobs array. The 'summary' field for web-searched jobs should combine the tool's description/snippet with your reasoning for the match.
 6. Aim for high relevance. If no suitable jobs are found even after searching, return an empty recommendedJobs array.
 `,
