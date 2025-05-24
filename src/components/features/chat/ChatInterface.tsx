@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { SendHorizonal, User, Cpu, Search, AlertTriangle, ArrowDown, Eye, Info, MessageSquareQuestion } from 'lucide-react';
+import { SendHorizonal, User, Cpu, Search, AlertTriangle, ArrowDown, Eye, Info } from 'lucide-react';
 import type { ChatMessage, RecommendedJob } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
@@ -22,6 +22,86 @@ import { useToast } from '@/hooks/use-toast';
 const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search or answer your career questions today?";
 const INITIAL_PROMPT_TEXT = "Hello! Upload your resume so I can assist you with personalized job recommendations and answer your career questions.";
 const NO_RESUME_WARNING_TEXT = "To get personalized job recommendations, please upload your resume using the form on this page. You can still ask general career questions.";
+
+
+export const isGeneralQuestion = (query: string): boolean => {
+  const q = query.toLowerCase().trim();
+
+  // 1. Highly specific informational queries (prioritized)
+  const verySpecificInfoPatterns = [
+    /^give me a (roadmap|guide|plan|list|summary|explanation|overview|breakdown|report) for .*/i,
+    /^tell me about .*/i,
+    /^explain .*/i,
+    /^what is .*/i,
+    /^what are .*/i,
+    /^how do i .*/i,
+    /^how to .*/i,
+    /^how does .* work/i,
+    /^(steps to|guide to|roadmap for) .*/i, // Covers "roadmap for AI engineer"
+  ];
+  if (verySpecificInfoPatterns.some(pattern => pattern.test(q))) {
+    // Check for explicit job search overrides WITHIN these specific patterns (less likely but defensive)
+    const explicitJobSearchInInfo = [
+        /(find|search|list|get|show me) .* (jobs|roles|positions|openings)/i
+    ];
+    if (explicitJobSearchInInfo.some(cmd => cmd.test(q))) {
+        // e.g., "give me a plan for finding jobs as an AI engineer" could be job search
+        // This is a nuanced area. For now, if it matches a very specific info pattern,
+        // and the job command isn't overwhelmingly strong, lean towards info.
+        // If the job command is primary, it should be caught by next block.
+        if (q.includes("jobs for") || q.includes("roles for")) return false; // "roadmap for jobs for ai engineer"
+    }
+    return true;
+  }
+
+  // 2. Explicit job search commands
+  const explicitJobSearchCommands = [
+    /(find|search for|look for|show me|get me|list) .* (jobs|roles|positions|openings|vacancies)/i,
+    /looking for .* (jobs|roles|positions|openings|vacancies)/i,
+    /recommend .* (jobs|roles|positions|openings|vacancies)/i,
+    /suggest .* (jobs|roles|positions|openings|vacancies)/i,
+    // Matches queries like "software engineer jobs", "data scientist remote"
+    // This requires careful tuning to avoid catching general role mentions.
+    // For now, keeping it tied to explicit action words.
+  ];
+  if (explicitJobSearchCommands.some(pattern => pattern.test(q))) {
+    return false;
+  }
+
+  // 3. Other informational patterns (less specific than group 1 but still strong)
+  const otherInformationalPatterns = [
+    /learn about/i,
+    /information on/i, /details about/i,
+    /pros and cons of/i,
+    /what are the (skills|requirements|responsibilities|duties)( for| related to)?/i,
+    /tips for/i, /advice on/i, /best practices for/i,
+    /^define /i, /^compare /i,
+  ];
+  if (otherInformationalPatterns.some(pattern => pattern.test(q))) {
+     // Check for explicit job search overrides again
+    if (explicitJobSearchCommands.some(command => command.test(q))) {
+        return false;
+    }
+    return true;
+  }
+
+  // 4. Queries ending with a question mark (that aren't explicit job searches)
+  if (q.endsWith("?")) {
+    // Avoid misclassifying direct job search commands ending with '?' as general questions
+    const jobKeywords = ["job", "jobs", "role", "roles", "position", "positions", "opening", "openings", "vacancy", "vacancies"];
+    const startsWithSearchAction = ["find", "search for", "list", "show me", "get me"].some(verb => q.startsWith(verb + " "));
+
+    if (startsWithSearchAction && jobKeywords.some(keyword => q.includes(" " + keyword))) {
+      return false; // e.g., "find software engineer jobs in CA?"
+    }
+    return true; // General question ending with '?'
+  }
+
+  // 5. Default to job search if none of the above specific conditions are met.
+  // This is because the primary function of this bot is job searching.
+  // Simple noun phrases like "AI engineer" or "marketing manager remote" will fall here.
+  return false;
+};
 
 
 export default function ChatInterface() {
@@ -57,22 +137,22 @@ export default function ChatInterface() {
            )) {
           newParsedResumeTextContent = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
           resumeIsAvailable = true;
-          setResumeError(null); // Clear previous error if data is valid
+          setResumeError(null);
         } else {
-          console.warn("Stored resume data is invalid or empty. Clearing and prompting re-upload.");
+          console.warn("Stored resume data is invalid or empty. Clearing.");
           localStorage.removeItem('parsedResumeData');
-          setResumeError("Your stored resume data was invalid. Please re-upload.");
-          newParsedResumeTextContent = ""; // Ensure it's empty
+          setResumeError("Your stored resume data was invalid or incomplete. Please re-upload.");
+          newParsedResumeTextContent = "";
         }
       } catch (e) {
         console.error("Failed to parse/validate resume from localStorage:", e);
         localStorage.removeItem('parsedResumeData');
         setResumeError("Could not load your resume data. Please re-upload.");
-        newParsedResumeTextContent = ""; // Ensure it's empty
+        newParsedResumeTextContent = "";
       }
     } else {
-      setResumeError(null); // No stored data, so no error.
-      newParsedResumeTextContent = ""; // Ensure it's empty
+      setResumeError(null);
+      newParsedResumeTextContent = "";
     }
 
     setParsedResumeText(newParsedResumeTextContent);
@@ -82,22 +162,24 @@ export default function ChatInterface() {
       const uniqueResumeReadyId = `ai-msg-resume-ready-${Date.now()}`;
 
       if (isInitialPageLoad && prevMessages.length === 0) {
-         // Only add initial prompt if no messages exist AT ALL
         return [{ id: uniqueInitialId, sender: 'ai', text: INITIAL_PROMPT_TEXT, timestamp: new Date() }];
       } else if (fromEvent && resumeIsAvailable) {
-        // Add "resume ready" only if triggered by event, resume is valid, and it's not already the last message
         const lastMessage = prevMessages[prevMessages.length - 1];
-        if (!lastMessage || (lastMessage.sender === 'ai' && lastMessage.text !== RESUME_READY_TEXT && lastMessage.text !== INITIAL_PROMPT_TEXT && lastMessage.text !== NO_RESUME_WARNING_TEXT )) {
+        const isAlreadyPresent = lastMessage?.sender === 'ai' &&
+                                 (lastMessage.text === RESUME_READY_TEXT ||
+                                  lastMessage.text === INITIAL_PROMPT_TEXT ||
+                                  lastMessage.text === NO_RESUME_WARNING_TEXT);
+        if (!isAlreadyPresent) {
            return [...prevMessages, { id: uniqueResumeReadyId, sender: 'ai', text: RESUME_READY_TEXT, timestamp: new Date() }];
         }
       }
-      return prevMessages; // No change if conditions not met
+      return prevMessages;
     });
   };
 
 
   useEffect(() => {
-    loadResumeData(true, false); // Initial load check
+    loadResumeData(true, false);
 
     const handleResumeUpdateEvent = () => {
       toast({
@@ -105,7 +187,7 @@ export default function ChatInterface() {
         description: "Your resume information has been loaded into the chat.",
         variant: "default",
       });
-      loadResumeData(false, true); // Load triggered by event
+      loadResumeData(false, true);
     };
 
     window.addEventListener('resumeUpdated', handleResumeUpdateEvent);
@@ -137,50 +219,6 @@ export default function ChatInterface() {
     }
   };
 
-  const isGeneralQuestion = (query: string): boolean => {
-    const q = query.toLowerCase().trim();
-
-    // Patterns that strongly indicate a general/informational question for RAG
-    const informationalPatterns = [
-      /roadmap for/, /guide to/, /steps to/, /how to become/, /learn about/,
-      /information on/, /pros and cons of/, /details about/,
-      /explain .* to me/, /tell me more about/, /how do i/, /how does .* work/,
-      /what are the (skills|requirements|responsibilities|duties)( for| related to)?/,
-      /tips for/, /advice on/, /best practices for/,
-      /^what is /, /^what are /, /^define /, /^compare /, /^explain /, /^tell me /, /^give me a (list|summary|explanation|roadmap|guide|overview|breakdown|report|plan)( of| for)?/
-    ];
-
-    if (informationalPatterns.some(pattern => pattern.test(q))) {
-      // Check for an override: if it explicitly asks to "find jobs" or "list roles" despite the info pattern
-      const explicitJobSearchCommands = [
-        /find .* (jobs|roles|positions|openings)/, 
-        /list .* (jobs|roles|positions|openings)/, 
-        /search for .* (jobs|roles|positions|openings)/, 
-        /show me .* (jobs|roles|positions|openings)/,
-        /get me .* (jobs|roles|positions|openings)/
-      ];
-      if (explicitJobSearchCommands.some(command => command.test(q))) {
-        return false; // It's an info pattern but overridden by explicit job search command
-      }
-      return true; // Matches a strong informational pattern
-    }
-
-    // Explicit question mark, if not caught by patterns above
-    if (q.endsWith("?")) {
-      // Avoid misclassifying direct job search commands ending with '?' as general questions
-      const jobSeekingKeywords = ["job", "jobs", "role", "roles", "position", "positions", "opening", "openings", "vacancy", "vacancies"];
-      const startsWithJobSearchAction = ["find", "search for", "list", "show me", "get me"].some(verb => q.startsWith(verb + " "));
-      
-      if(startsWithJobSearchAction && jobSeekingKeywords.some(keyword => q.includes(" " + keyword))) {
-         return false; // e.g. "find software engineer jobs in CA?" should be job search
-      }
-      return true; // General question ending with '?'
-    }
-    
-    // Default to job search if none of the above specific conditions are met
-    return false;
-  };
-
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -197,12 +235,11 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    // If no resume is loaded, but it's NOT a general question, show warning.
-    // If it IS a general question, proceed even without a resume.
-    if ((!parsedResumeText || parsedResumeText.trim() === "") && !isGeneralQuestion(currentQuery)) {
+    const generalQuery = isGeneralQuestion(currentQuery);
+
+    if ((!parsedResumeText || parsedResumeText.trim() === "") && !generalQuery) {
         setMessages(prev => {
             const lastMessage = prev[prev.length -1];
-            // Avoid adding duplicate warnings
             if (lastMessage && lastMessage.text === NO_RESUME_WARNING_TEXT && lastMessage.sender === 'ai') return prev;
             return [...prev, {
                 id: `ai-err-no-resume-${Date.now()}`,
@@ -216,7 +253,7 @@ export default function ChatInterface() {
     }
 
     try {
-      if (isGeneralQuestion(currentQuery)) {
+      if (generalQuery) {
         const aiRAGResponse = await contextualJobHelper({ userQuery: currentQuery });
         const aiMessage: ChatMessage = {
           id: `ai-rag-resp-${Date.now()}`,
@@ -275,12 +312,12 @@ export default function ChatInterface() {
     }
   };
   
-  const isChatInputDisabled = isLoading || (!parsedResumeText && messages.length > 1 && messages[messages.length-1]?.text !== INITIAL_PROMPT_TEXT);
+  const isChatInputDisabled = isLoading || (parsedResumeText === null) || (parsedResumeText.trim() === "" && messages.length > 0 && messages[messages.length-1]?.text === NO_RESUME_WARNING_TEXT);
 
 
   return (
     <>
-      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-22rem)] sm:h-[calc(100vh-18rem)] max-h-[700px] border-2 border-primary/30 relative overflow-hidden bg-card">
+      <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-22rem)] sm:h-[calc(100vh-18rem)] max-h-[700px] border-primary/30 relative overflow-hidden bg-card">
         <CardHeader className="bg-primary/10 dark:bg-primary/20 border-b border-primary/20">
           <CardTitle className="text-xl font-semibold flex items-center gap-2 text-primary">
             <Cpu className="h-6 w-6" /> AI Career Assistant
@@ -297,9 +334,9 @@ export default function ChatInterface() {
             )}
             {messages.map((message, msgIdx) => (
               <div
-                key={`${message.id}-${msgIdx}`}
+                key={`${message.id}-${msgIdx}-chatmsg`}
                 className={`flex items-end gap-2.5 animate-fadeInUp`}
-                style={{ animationDelay: `${Math.min(msgIdx * 0.05, 0.5)}s`}} // Cap animation delay
+                style={{ animationDelay: `${Math.min(msgIdx * 0.05, 0.5)}s`}}
               >
                 {message.sender === 'ai' && (
                   <Avatar className="h-9 w-9 shadow-sm shrink-0">
@@ -345,16 +382,12 @@ export default function ChatInterface() {
                         
                         let dataAiHintForPlaceholder = "company logo";
                         if (job.company) {
-                            const words = job.company.split(' ').filter(w => w.length > 0);
-                            const firstWord = words[0]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
-                            if (firstWord) {
-                                dataAiHintForPlaceholder = firstWord.length > 15 ? firstWord.substring(0,15) : firstWord;
+                            const words = job.company.toLowerCase().split(' ').filter(w => w.length > 0 && /^[a-z0-9]+$/.test(w)); // only alphanumeric
+                            if (words.length > 0) {
+                                dataAiHintForPlaceholder = words[0].substring(0,15);
                                 if (words.length > 1 && words[1]) {
-                                    const secondWord = words[1]?.toLowerCase().replace(/[^a-z0-9]/gi, '');
-                                    if (secondWord) {
-                                      const combinedHint = `${firstWord} ${secondWord}`;
-                                      if (combinedHint.length <= 20) dataAiHintForPlaceholder = combinedHint;
-                                    }
+                                    const combined = `${words[0]} ${words[1]}`;
+                                    if (combined.length <= 20) dataAiHintForPlaceholder = combined;
                                 }
                             }
                         }
@@ -362,7 +395,7 @@ export default function ChatInterface() {
 
                         return (
                         <Card
-                            key={job.id || `job-${index}-${message.id}`}
+                            key={job.id || `job-${index}-${message.id}-item`}
                             className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer group border-primary/10 hover:border-primary/30"
                             onClick={() => handleViewJobDetails(job)}
                         >
@@ -386,8 +419,8 @@ export default function ChatInterface() {
                                 className="text-xs py-0.5 px-2 shadow-sm"
                             >Relevance: {job.relevanceScore}%
                             </Badge>
-                            {job.postedDate && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90">{job.postedDate}</Badge>}
-                            {job.employmentType && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90">{job.employmentType}</Badge>}
+                            {job.postedDate && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90 bg-primary/5">{job.postedDate}</Badge>}
+                            {job.employmentType && <Badge variant="outline" className="text-xs py-0.5 px-2 shadow-sm border-primary/30 text-primary/90 bg-primary/5">{job.employmentType}</Badge>}
                           </div>
                           <div className="flex items-center justify-between mt-2.5">
                             <Button
