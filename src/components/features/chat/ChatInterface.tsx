@@ -11,7 +11,7 @@ import type { ChatMessage } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
-import { jobRecommendation } from '@/ai/flows/job-recommendation'; 
+import { jobRecommendation } from '@/ai/flows/job-recommendation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -26,40 +26,58 @@ export default function ChatInterface() {
 
   const loadResumeData = () => {
     const storedResumeData = localStorage.getItem('parsedResumeData');
+    const RESUME_READY_TEXT = "Great! I see your resume. How can I help you with your job search today?";
+    const INITIAL_PROMPT_TEXT = "Hello! Upload your resume using the form so I can assist you with personalized job recommendations.";
+
     if (storedResumeData) {
       try {
         const data = JSON.parse(storedResumeData);
-        const text = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
-        setParsedResumeText(text);
+        const newParsedResumeText = `Skills: ${data.skills?.join(', ') || 'Not specified'}. Experience: ${data.experience?.join('; ') || 'Not specified'}. Education: ${data.education?.join('; ') || 'Not specified'}.`;
+        setParsedResumeText(newParsedResumeText);
         setResumeError(null);
-        // Add a friendly message if this is the first time after upload and chat is empty
-        if (messages.length === 0 || messages[messages.length - 1]?.text.includes("upload your resume")) {
-          const resumeReadyMsg: ChatMessage = {
-            id: (Date.now() + 2).toString(),
-            sender: 'ai',
-            text: "Great! I see your resume. How can I help you with your job search today?",
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, resumeReadyMsg]);
-        }
+
+        setMessages(prevMessages => {
+          const lastMessageText = prevMessages.length > 0 ? prevMessages[prevMessages.length - 1]?.text : null;
+
+          if (lastMessageText === RESUME_READY_TEXT) {
+            return prevMessages; // Already shown, do nothing
+          }
+
+          // Show "Resume Ready" if chat was empty OR last message was the initial prompt to upload
+          if (prevMessages.length === 0 || lastMessageText === INITIAL_PROMPT_TEXT) {
+            const resumeReadyMsg: ChatMessage = {
+              id: `ai-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              sender: 'ai',
+              text: RESUME_READY_TEXT,
+              timestamp: new Date(),
+            };
+            return [...prevMessages, resumeReadyMsg];
+          }
+          return prevMessages;
+        });
+
       } catch (e) {
         console.error("Failed to parse resume data from localStorage", e);
-        setParsedResumeText(""); 
+        setParsedResumeText("");
         setResumeError("Could not load your resume data. Please try re-uploading.");
       }
-    } else {
-      setParsedResumeText(""); 
-      if (messages.length === 0) { // Only show initial prompt if chat is empty
-        setMessages([{
-          id: Date.now().toString(),
-          sender: 'ai',
-          text: "Hello! Upload your resume using the form so I can assist you with personalized job recommendations.",
-          timestamp: new Date(),
-        }]);
-      }
+    } else { // No stored resume data
+      setParsedResumeText(""); // Ensure it's cleared if no resume
+      setMessages(prevMessages => {
+        if (prevMessages.length === 0) {
+          const initialPromptMsg: ChatMessage = {
+            id: `ai-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            sender: 'ai',
+            text: INITIAL_PROMPT_TEXT,
+            timestamp: new Date(),
+          };
+          return [initialPromptMsg];
+        }
+        return prevMessages;
+      });
     }
   };
-  
+
   useEffect(() => {
     loadResumeData(); // Initial load
 
@@ -71,7 +89,7 @@ export default function ChatInterface() {
       window.removeEventListener('resumeUpdated', handleResumeUpdate);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Removed messages from dependency array to prevent re-triggering initial messages
+  }, []);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     const viewport = scrollAreaRef.current?.querySelector('div[data-radix-scroll-area-viewport]');
@@ -82,14 +100,14 @@ export default function ChatInterface() {
 
   useEffect(() => {
     if (messages.length > 0) {
-      scrollToBottom('auto'); // Auto scroll on new messages
+      scrollToBottom('auto');
     }
   }, [messages]);
 
   const handleScroll = () => {
     const viewport = scrollAreaRef.current?.querySelector('div[data-radix-scroll-area-viewport]');
     if (viewport) {
-      const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop <= viewport.clientHeight + 50; // 50px threshold
+      const isScrolledToBottom = viewport.scrollHeight - viewport.scrollTop <= viewport.clientHeight + 50;
       setShowScrollToBottom(!isScrolledToBottom && viewport.scrollHeight > viewport.clientHeight);
     }
   };
@@ -100,7 +118,7 @@ export default function ChatInterface() {
     if (!inputValue.trim()) return;
 
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: `user-msg-${Date.now()}`,
       sender: 'user',
       text: inputValue,
       timestamp: new Date(),
@@ -110,50 +128,41 @@ export default function ChatInterface() {
     setInputValue('');
     setIsLoading(true);
 
-    if (parsedResumeText === null) { 
-        const loadingResumeMsg: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: "Checking for your resume...",
-            timestamp: new Date(),
-        };
-        setMessages((prevMessages) => [...prevMessages, loadingResumeMsg]);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        if (parsedResumeText === null || !parsedResumeText) { 
-            const noResumeMsg: ChatMessage = {
-                id: (Date.now() + 2).toString(),
+    // This check is important: if parsedResumeText is null, it means we haven't checked localStorage yet.
+    // If it's an empty string, it means we checked and found nothing.
+    if (parsedResumeText === null || !parsedResumeText) {
+        const noResumeMsgText = "I couldn't find your resume details. Please upload your resume using the form for personalized job recommendations.";
+        // Check if this exact message is already the last one to avoid spamming it
+        setMessages(prev => {
+            if (prev.length > 0 && prev[prev.length -1].text === noResumeMsgText) return prev;
+            return [...prev, {
+                id: `ai-err-${Date.now()}`,
                 sender: 'ai',
-                text: "I couldn't find your resume details. Please upload your resume using the form for personalized job recommendations.",
+                text: noResumeMsgText,
                 timestamp: new Date(),
-            };
-            setMessages((prevMessages) => [...prevMessages.filter(m => m.text !== "Checking for your resume..."), noResumeMsg]);
-            setIsLoading(false);
-            return;
-        }
-    } else if (!parsedResumeText) {
-         const noResumeMsg: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            sender: 'ai',
-            text: "I couldn't find your resume details. Please upload your resume using the form for personalized job recommendations.",
-            timestamp: new Date(),
-        };
-        setMessages((prevMessages) => [...prevMessages, noResumeMsg]);
+            }];
+        });
         setIsLoading(false);
         return;
     }
 
     try {
       const aiResponse = await jobRecommendation({
-        resumeText: parsedResumeText, 
+        resumeText: parsedResumeText,
         userPreferences: userMessage.text,
       });
-      
-      let responseText = aiResponse.recommendedJobs.length > 0 
-        ? "Here are some job recommendations based on your query and resume:" 
+
+      let responseText = aiResponse.recommendedJobs.length > 0
+        ? "Here are some job recommendations based on your query and resume:"
         : (aiResponse.noResultsFeedback || "I couldn't find specific jobs for that query right now. Try rephrasing or broadening your search.");
 
+      if (aiResponse.noResultsFeedback && aiResponse.recommendedJobs.length === 0) {
+        responseText = aiResponse.noResultsFeedback;
+      }
+
+
       const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: `ai-resp-${Date.now()}`,
         sender: 'ai',
         text: responseText,
         timestamp: new Date(),
@@ -166,7 +175,7 @@ export default function ChatInterface() {
       console.error("Error processing message:", error);
       const errorMessageText = error instanceof Error ? error.message : "An unknown error occurred.";
       const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: `ai-err-${Date.now() + 1}`,
         sender: 'ai',
         text: `Sorry, I encountered an error: ${errorMessageText}. Please try again.`,
         timestamp: new Date(),
@@ -178,7 +187,7 @@ export default function ChatInterface() {
   };
 
   return (
-    <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-10rem)] max-h-[700px] border-2 border-primary/20 relative overflow-hidden">
+    <Card className="w-full shadow-xl flex flex-col h-[calc(100vh-14rem)] sm:h-[calc(100vh-10rem)] max-h-[700px] border-2 border-primary/20 relative overflow-hidden">
       <CardHeader className="bg-primary/5 dark:bg-primary/10">
         <CardTitle className="flex items-center gap-2 text-xl font-semibold">
           <Cpu className="text-primary h-6 w-6" /> AI Career Assistant
@@ -204,7 +213,7 @@ export default function ChatInterface() {
                 </Avatar>
               )}
               <div
-                className={`max-w-[75%] rounded-xl px-4 py-3 shadow-lg ${
+                className={`max-w-[85%] sm:max-w-[75%] rounded-xl px-4 py-3 shadow-lg ${
                   message.sender === 'user'
                     ? 'bg-primary text-primary-foreground rounded-br-none ml-auto'
                     : 'bg-card text-card-foreground border border-border rounded-bl-none'
@@ -216,21 +225,21 @@ export default function ChatInterface() {
                     <Search size={14}/> Searched for: "{message.searchQueryUsed}"
                   </p>
                 )}
-                
+
                 {message.relatedJobs && message.relatedJobs.length > 0 && (
                   <div className="mt-3 space-y-3">
                     {message.relatedJobs.map((job, index) => {
                        const companyInitials = job.company?.substring(0, 2).toUpperCase() || '??';
                        const placeholderImageUrl = `https://placehold.co/60x60.png?text=${encodeURIComponent(companyInitials)}`;
                        const dataAiHintForPlaceholder = job.company?.split(' ')[0]?.toLowerCase() || "company";
-                       
+
                        return (
                        <Card key={job.id || index} className="bg-background/80 dark:bg-muted/30 p-3 shadow-md hover:shadow-lg transition-shadow duration-200">
                         <div className="flex items-start gap-3">
-                           <Image 
-                            src={placeholderImageUrl} 
-                            alt={`${job.company} logo`} 
-                            width={48} height={48} 
+                           <Image
+                            src={placeholderImageUrl}
+                            alt={`${job.company} logo`}
+                            width={48} height={48}
                             className="rounded-lg border object-contain bg-muted flex-shrink-0 mt-1"
                             data-ai-hint={dataAiHintForPlaceholder}
                           />
@@ -307,7 +316,7 @@ export default function ChatInterface() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="flex-1 text-sm py-2.5 shadow-inner focus:shadow-md focus:ring-2 focus:ring-primary/50"
-            disabled={isLoading || parsedResumeText === null} 
+            disabled={isLoading || parsedResumeText === null}
           />
           <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim() || parsedResumeText === null} className="shrink-0 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150">
             <SendHorizonal className="h-5 w-5" />
