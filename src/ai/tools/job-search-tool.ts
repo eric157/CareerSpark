@@ -1,7 +1,7 @@
 
 'use server';
 /**
- * @fileOverview A Genkit tool for searching job listings on the web.
+ * @fileOverview A Genkit tool for searching job listings on the web using SerpApi.
  *
  * Exports:
  * - searchJobsTool: The Genkit tool definition for job searching.
@@ -16,7 +16,8 @@ import { z } from 'genkit';
 // Internal Schemas (not directly exported as constants)
 const JobSearchInputSchema = z.object({
   query: z.string().describe('The search query for job roles (e.g., "React developer in San Francisco").'),
-  numResults: z.number().optional().default(5).describe('The desired number of search results (max 10).'),
+  numResults: z.number().optional().default(5).describe('The desired number of search results (max 10, will be capped by API limits).'),
+  location: z.string().optional().describe('Optional location for the job search (e.g., "Austin, TX", "Remote")'),
 });
 export type JobSearchInput = z.infer<typeof JobSearchInputSchema>;
 
@@ -24,9 +25,9 @@ const JobSearchResultSchema = z.object({
   title: z.string().describe('The job title.'),
   company: z.string().describe('The name of the company offering the job.'),
   location: z.string().optional().describe('The location of the job.'),
-  url: z.string().url().describe('A URL link to the job posting.'),
+  url: z.string().url().describe('A URL link to the job posting or a Google Jobs link.'),
   snippet: z.string().optional().describe('A brief snippet or summary of the job.'),
-  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2024-07-28").'),
+  postedDate: z.string().optional().describe('The date the job was posted (e.g., "2 days ago", "2024-07-28").'),
   employmentType: z.string().optional().describe('Type of employment (e.g., "Full-time", "Contract").')
 });
 export type JobSearchResult = z.infer<typeof JobSearchResultSchema>;
@@ -35,95 +36,133 @@ const JobSearchOutputSchema = z.array(JobSearchResultSchema).describe('A list of
 export type JobSearchOutput = z.infer<typeof JobSearchOutputSchema>;
 
 
-// --- Real API Integration Placeholder ---
-// Replace this mock function with actual API calls to a job search provider.
-async function fetchJobsFromRealAPI(input: JobSearchInput): Promise<JobSearchOutput> {
-  console.log(`Simulating REAL API call for jobs with query: "${input.query}", numResults: ${input.numResults}`);
+async function fetchJobsFromSerpApi(input: JobSearchInput): Promise<JobSearchOutput> {
+  const apiKey = process.env.SERPAPI_API_KEY;
 
-  // const API_KEY = process.env.YOUR_JOB_API_KEY; // Store your API key in .env
-  // const API_ENDPOINT = 'https://api.examplejobprovider.com/search';
-  //
-  // if (!API_KEY) {
-  //   console.warn("API Key for job search is not configured. Returning mock data.");
-  //   // Fallback to more dynamic mock data if API key is missing
-  //   return generateDynamicMockResults(input);
-  // }
-  //
-  // try {
-  //   const response = await fetch(`${API_ENDPOINT}?query=${encodeURIComponent(input.query)}&limit=${input.numResults}&apiKey=${API_KEY}`, {
-  //     method: 'GET',
-  //     headers: {
-  //       'Content-Type': 'application/json',
-  //     },
-  //   });
-  //
-  //   if (!response.ok) {
-  //     console.error(`API Error: ${response.status} ${response.statusText}`);
-  //     // Fallback to mock data or throw error
-  //     return generateDynamicMockResults(input, `API Error: ${response.status}`);
-  //   }
-  //
-  //   const data = await response.json();
-  //
-  //   // IMPORTANT: You'll need to map the structure of `data` from your chosen API
-  //   // to the `JobSearchResultSchema`.
-  //   // Example mapping (highly dependent on the actual API response):
-  //   // return data.jobs.map(job => ({
-  //   //   title: job.title,
-  //   //   company: job.companyName,
-  //   //   location: job.location,
-  //   //   url: job.jobUrl,
-  //   //   snippet: job.descriptionSnippet,
-  //   //   postedDate: job.datePosted,
-  //   //   employmentType: job.employmentType
-  //   // }));
-  //
-  //   // For now, we'll continue with dynamic mock generation.
-  //   // Remove this line once you have integrated a real API.
-     return generateDynamicMockResults(input);
-  //
-  // } catch (error) {
-  //   console.error('Failed to fetch jobs from API:', error);
-  //   // Fallback to mock data or throw error
-  //   return generateDynamicMockResults(input, 'Failed to connect to API.');
-  // }
-  return generateDynamicMockResults(input); // Fallback for now
+  if (!apiKey) {
+    console.warn("SERPAPI_API_KEY is not configured. Returning mock data. Please add your API key to .env file.");
+    return generateDynamicMockResults(input, 'SERPAPI_API_KEY not found.');
+  }
+
+  const searchParams = new URLSearchParams({
+    engine: 'google_jobs',
+    q: input.query,
+    api_key: apiKey,
+    hl: 'en', // language
+    gl: 'us', // country (you might want to make this configurable)
+    num: (input.numResults ?? 5).toString(), // SerpApi uses 'num' for number of results
+  });
+
+  if (input.location) {
+    searchParams.append('location', input.location);
+  }
+
+  const API_ENDPOINT = `https://serpapi.com/search.json?${searchParams.toString()}`;
+
+  try {
+    console.log(`Fetching jobs from SerpApi: ${API_ENDPOINT.replace(apiKey, 'SERPAPI_API_KEY_HIDDEN')}`);
+    const response = await fetch(API_ENDPOINT, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`SerpApi Error: ${response.status} ${response.statusText}`, errorBody);
+      return generateDynamicMockResults(input, `SerpApi Error: ${response.status}. ${errorBody}`);
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+        console.error('SerpApi returned an error in the response body:', data.error);
+        return generateDynamicMockResults(input, `SerpApi returned an error: ${data.error}`);
+    }
+    
+    if (!data.jobs_results || data.jobs_results.length === 0) {
+      console.log('No job results from SerpApi for query:', input.query);
+      return [];
+    }
+
+    // Map the structure of `data.jobs_results` from SerpApi
+    // to the `JobSearchResultSchema`.
+    return data.jobs_results.map((job: any) => {
+      let jobUrl = job.link || job.related_links?.find((l:any) => l.link)?.link;
+      // Fallback to a Google search link if no direct link
+      if (!jobUrl && job.job_id) {
+        jobUrl = `https://www.google.com/search?q=${encodeURIComponent(input.query)}&ibp=htl;jobs#fpstate=tldetail&htivrt=jobs&htilrad=0&htidocid=${job.job_id}`;
+      }
+      
+      // Ensure URL is valid or provide a default if it's critical and missing
+      try {
+        new URL(jobUrl); // validate URL
+      } catch (e) {
+        console.warn(`Invalid or missing URL for job "${job.title}", using placeholder. Original: ${jobUrl}`);
+        jobUrl = `https://www.google.com/search?q=${encodeURIComponent(job.title || input.query)}+${encodeURIComponent(job.company_name || '')}`;
+      }
+
+
+      return {
+        title: job.title || 'N/A',
+        company: job.company_name || 'N/A',
+        location: job.location,
+        // Use a Google search for the job as a fallback URL if a direct link isn't obvious
+        url: jobUrl,
+        snippet: job.description || job.snippet, // SerpApi often has 'description'
+        postedDate: job.detected_extensions?.posted_at,
+        employmentType: job.detected_extensions?.schedule_type,
+      };
+    }).filter((job: JobSearchResult) => job.url); // Ensure jobs have a URL
+  
+  } catch (error) {
+    console.error('Failed to fetch jobs from SerpApi:', error);
+    return generateDynamicMockResults(input, `Failed to connect to SerpApi. ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // This function generates more dynamic mock results based on the query
+// Kept as a fallback or for when API key is missing.
 function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): JobSearchOutput {
   const results: JobSearchOutput = [];
   const queryKeywords = input.query.toLowerCase().split(' ').filter(kw => kw.length > 1);
   
   let baseTitle = "Software Engineer";
-  let baseCompany = "Tech Solutions";
-  let baseLocation = "Remote";
+  let baseCompany = "Tech Solutions Inc."; // Added Inc. for a bit more variety
+  let baseLocation = input.location || "Remote";
 
   if (queryKeywords.includes("manager")) baseTitle = "Product Manager";
   if (queryKeywords.includes("data")) baseTitle = "Data Scientist";
   if (queryKeywords.includes("ux") || queryKeywords.includes("ui")) baseTitle = "UX Designer";
   if (queryKeywords.includes("analyst")) baseTitle = "Business Analyst";
+  if (queryKeywords.includes("devops")) baseTitle = "DevOps Engineer";
 
 
-  const locations = ["New York, NY", "San Francisco, CA", "Austin, TX", "Chicago, IL", "Remote", "London, UK", "Berlin, Germany"];
-  const companies = ["Innovatech", "FutureAI", "CyberSec Corp", "EcoWorld Ltd", "HealthFirst Inc."];
-  const jobTypes = ["Full-time", "Contract", "Part-time", "Internship"];
+  const locations = ["New York, NY", "San Francisco, CA", "Austin, TX", "Chicago, IL", "Boston, MA", "Seattle, WA", "London, UK", "Berlin, Germany", "Remote"];
+  const companies = ["Innovatech", "FutureAI Dynamics", "CyberSec Corp Ltd.", "EcoWorld Solutions", "HealthFirst Digital", "QuantumLeap Tech"];
+  const jobTypes = ["Full-time", "Contract", "Part-time", "Internship", "Temporary"];
 
   for (let i = 0; i < (input.numResults ?? 5); i++) {
-    const qTitle = queryKeywords.find(kw => !["remote", "full-time", "contract", "manager", "data", "ux", "ui", "analyst", ...locations.join(' ').toLowerCase().split(' ')].includes(kw)) || baseTitle.split(' ')[0];
-    const dynamicTitle = `${qTitle.charAt(0).toUpperCase() + qTitle.slice(1)} ${baseTitle.split(' ').slice(1).join(' ')} ${(i % 3 === 0) ? 'Lead' : (i % 3 === 1) ? 'Senior' : 'Associate'}`;
-    const dynamicCompany = `${companies[i % companies.length]} ${queryKeywords.includes("startup") ? "Startup" : "Global"}`;
-    const dynamicLocation = locations[i % locations.length];
+    // Try to extract a role from query, otherwise use baseTitle
+    const roleFromQuery = queryKeywords.find(kw => !["remote", "full-time", "contract", "manager", "data", "ux", "ui", "analyst", "devops", ...locations.join(' ').toLowerCase().split(' ')].includes(kw));
+    const dynamicRole = roleFromQuery ? (roleFromQuery.charAt(0).toUpperCase() + roleFromQuery.slice(1)) : baseTitle.split(' ')[0];
+    
+    const titleSuffixes = ['Lead', 'Senior', 'Associate', 'Junior', 'Principal'];
+    const dynamicTitle = `${dynamicRole} ${baseTitle.split(' ').slice(1).join(' ')} ${titleSuffixes[i % titleSuffixes.length]}`;
+    
+    const dynamicCompany = `${companies[i % companies.length]} ${queryKeywords.includes("startup") ? "Startup Division" : (i % 2 === 0 ? "Global" : "Ventures")}`;
+    const dynamicLocation = input.location || locations[i % locations.length];
     const postedDate = new Date(Date.now() - (i * 24 * 60 * 60 * 1000) - (Math.random() * 10 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-
+    const jobUrl = `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${dynamicCompany.toLowerCase().replace(/\s+/g, '-')}-${i + 1}`;
 
     results.push({
       title: dynamicTitle,
       company: dynamicCompany,
-      location: queryKeywords.find(kw => locations.map(l=>l.toLowerCase()).includes(kw)) || dynamicLocation,
-      url: `https://mockjobs.dev/posting/${dynamicTitle.toLowerCase().replace(/\s+/g, '-')}-${i + 1}`,
-      snippet: errorInfo ? `Could not fetch real jobs: ${errorInfo}. ` : `Seeking a ${dynamicTitle} to join ${dynamicCompany} in ${dynamicLocation}. Key skills: ${input.query}. This is a mock result.`,
-      postedDate: postedDate,
+      location: dynamicLocation,
+      url: jobUrl,
+      snippet: errorInfo ? `Could not fetch real jobs: ${errorInfo}. ` : `Seeking a talented ${dynamicTitle} for ${dynamicCompany} in ${dynamicLocation}. Key skills based on query: ${input.query}. This is a mock result.`,
+      postedDate: `${Math.floor(Math.random() * 20) + 1} days ago`, // More realistic mock date
       employmentType: jobTypes[i % jobTypes.length]
     });
   }
@@ -134,13 +173,12 @@ function generateDynamicMockResults(input: JobSearchInput, errorInfo?: string): 
 export const searchJobsTool = ai.defineTool(
   {
     name: 'searchJobsTool',
-    description: 'Searches the web for job listings based on a query. Use this to find current job openings if the user asks for jobs and no specific listings are provided, or if the provided listings are insufficient.',
+    description: 'Searches the web for job listings based on a query, and optionally a location. Use this to find current job openings if the user asks for jobs and no specific listings are provided, or if the provided listings are insufficient.',
     inputSchema: JobSearchInputSchema,
     outputSchema: JobSearchOutputSchema,
   },
   async (input) => {
-    // In a real scenario, you'd call your chosen job search API here.
-    // For now, it calls the placeholder function.
-    return fetchJobsFromRealAPI(input);
+    return fetchJobsFromSerpApi(input);
   }
 );
+
