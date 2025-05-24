@@ -77,12 +77,12 @@ No specific job listings were provided.
 
 Instructions:
 1. Analyze the user's resume and preferences.
-2. If no jobListings are provided, or if the provided listings do not seem sufficient or highly relevant based on user preferences, use the 'searchJobsTool' to find suitable job openings. Construct a concise and effective search query for the tool based on the user's resume and preferences (e.g., "software engineer remote typescript", "product manager fintech New York"). Include this query in the 'searchQueryUsed' field of your output.
+2. If no jobListings are provided, or if the provided listings do not seem sufficient or highly relevant based on user preferences, use the 'searchJobsTool' to find suitable job openings. Construct a concise and effective search query for the tool based on the user's resume and preferences (e.g., "software engineer remote typescript", "product manager fintech New York"). If you use the 'searchJobsTool', include the exact query you used in the 'searchQueryUsed' field of your output. If you do not use the 'searchJobsTool', omit the 'searchQueryUsed' field entirely from your output.
 3. From all available sources (provided listings and/or web search results), select up to 5 of the most relevant jobs.
 4. For each recommended job, provide a title, company, location, a summary explaining its relevance and why it's a good match, and a relevance score (0-100).
 5. Indicate the source of each job ('providedListings' or 'webSearch'). If from 'webSearch', include the job URL.
 6. If using the searchJobsTool, ensure the tool's output (job title, company, location, url, snippet) is used to populate the fields in the recommendedJobs array. The 'summary' field for web-searched jobs should combine the snippet with your reasoning for the match.
-7. Aim for high relevance. If no suitable jobs are found even after searching, return an empty recommendedJobs array and explain briefly in a general message if possible (though the structured output is primary).
+7. Aim for high relevance. If no suitable jobs are found even after searching, return an empty recommendedJobs array.
 `,
 });
 
@@ -97,3 +97,4 @@ const jobRecommendationFlow = ai.defineFlow(
     return output!;
   }
 );
+
