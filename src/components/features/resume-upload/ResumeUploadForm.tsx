@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, AlertTriangle, Loader2, ListChecks } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle, AlertTriangle, Loader2, ListChecks, Briefcase, GraduationCap } from 'lucide-react';
 import { parseResume, type ParseResumeOutput } from '@/ai/flows/resume-parsing';
 import { useToast } from '@/hooks/use-toast';
 
@@ -72,9 +74,9 @@ export default function ResumeUploadForm() {
 
           toast({
             title: "Resume Parsed Successfully!",
-            description: "Your key skills have been extracted. You can now chat with the AI for personalized job recommendations.",
+            description: "Key information has been extracted. See the ATS View below and chat with the AI for job recommendations.",
             variant: "default",
-            duration: 6000,
+            duration: 7000,
           });
           
           const fileInput = document.getElementById('resumeFile') as HTMLInputElement;
@@ -86,7 +88,7 @@ export default function ResumeUploadForm() {
         } catch (aiError) {
           console.error('AI parsing error:', aiError);
           setError('Failed to parse resume. Please try again or use a different file.');
-          setUploadProgress(0); // Reset progress on AI error
+          setUploadProgress(0);
           toast({
             title: "Parsing Error",
             description: "There was an issue parsing your resume. Please check the file and try again.",
@@ -159,31 +161,72 @@ export default function ResumeUploadForm() {
 
       {parsedData && !isLoading && (
         <Card className="mt-6 border-primary/30 shadow-lg bg-gradient-to-br from-card to-secondary/10 animate-fadeInUp">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg font-semibold flex items-center gap-2 text-green-600 dark:text-green-500">
-              <CheckCircle className="h-6 w-6" />
-              Resume Analysis Complete!
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold flex items-center gap-3 text-primary">
+              <CheckCircle className="h-7 w-7" />
+              Resume Analysis Complete (ATS View)
             </CardTitle>
-            <CardDescription className="text-xs">
-              Key information extracted. Ready for personalized job matching in the chat!
+            <CardDescription className="text-sm">
+              Here's what our AI extracted. You can now chat for personalized job matches.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm pt-2">
-            <div>
-              <h3 className="text-xs font-semibold mb-1.5 flex items-center gap-1.5 text-primary">
-                <ListChecks className="h-4 w-4"/> Top Skills Extracted:
-              </h3>
-              {parsedData.skills.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {parsedData.skills.slice(0, 7).map((skill, index) => ( 
-                    <span key={index} className="bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary/90 text-xs font-medium px-2.5 py-1 rounded-full shadow-sm">
-                      {skill}
-                    </span>
-                  ))}
-                  {parsedData.skills.length > 7 && <span className="text-xs text-muted-foreground italic mt-1">...and more.</span>}
-                </div>
-              ) : <p className="text-xs text-muted-foreground">No prominent skills extracted. Try a different resume or ensure skills are clearly listed.</p>}
-            </div>
+          <CardContent className="space-y-3 text-sm pt-0">
+            <Accordion type="single" collapsible className="w-full" defaultValue="skills">
+              <AccordionItem value="skills">
+                <AccordionTrigger className="text-base font-medium hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <ListChecks className="h-5 w-5 text-primary" /> Skills Extracted
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-2 pb-1">
+                  {parsedData.skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {parsedData.skills.map((skill, index) => ( 
+                        <Badge key={index} variant="secondary" className="text-xs font-medium shadow-sm">
+                          {skill}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : <p className="text-xs text-muted-foreground italic">No distinct skills extracted.</p>}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="experience">
+                <AccordionTrigger className="text-base font-medium hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="h-5 w-5 text-primary" /> Work Experience
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-2 pb-1 space-y-3">
+                  {parsedData.experience.length > 0 ? (
+                    parsedData.experience.map((exp, index) => (
+                      <div key={index} className="p-3 border rounded-md bg-background/50 shadow-sm">
+                        <p className="font-medium text-foreground">{exp.split(" at ")[0]}</p> {/* Basic parsing */}
+                        {exp.includes(" at ") && <p className="text-xs text-muted-foreground">{exp.split(" at ")[1]}</p>}
+                      </div>
+                    ))
+                  ) : <p className="text-xs text-muted-foreground italic">No work experience details extracted.</p>}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="education" className="border-b-0">
+                <AccordionTrigger className="text-base font-medium hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <GraduationCap className="h-5 w-5 text-primary" /> Education
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-2 pb-1 space-y-3">
+                  {parsedData.education.length > 0 ? (
+                    parsedData.education.map((edu, index) => (
+                       <div key={index} className="p-3 border rounded-md bg-background/50 shadow-sm">
+                        <p className="font-medium text-foreground">{edu.split(" from ")[0]}</p> {/* Basic parsing */}
+                        {edu.includes(" from ") && <p className="text-xs text-muted-foreground">{edu.split(" from ")[1]}</p>}
+                      </div>
+                    ))
+                  ) : <p className="text-xs text-muted-foreground italic">No education details extracted.</p>}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </CardContent>
         </Card>
       )}
