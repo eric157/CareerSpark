@@ -24,7 +24,7 @@ export default function JobsPage() {
   
   const [keywords, setKeywords] = useState('');
   const [location, setLocation] = useState('');
-  const [jobType, setJobType] = useState(''); // Not directly used by jobRecommendation flow yet
+  const [jobType, setJobType] = useState(''); // Initialized to empty string
 
   const [parsedResumeText, setParsedResumeText] = useState<string>("");
 
@@ -46,14 +46,13 @@ export default function JobsPage() {
   }, []);
 
 
-  const fetchJobs = async (currentKeywords: string, currentLocation: string) => {
+  const fetchJobs = async (currentKeywords: string, currentLocation: string, currentJobType: string) => {
     setIsLoading(true);
     setError(null);
 
     if (!parsedResumeText) {
       // Wait for resume text to be loaded or set to default
-      // This can happen if useEffect for resumeText hasn't completed yet
-      setTimeout(() => fetchJobs(currentKeywords, currentLocation), 100);
+      setTimeout(() => fetchJobs(currentKeywords, currentLocation, currentJobType), 100);
       return;
     }
 
@@ -61,8 +60,8 @@ export default function JobsPage() {
     if (currentLocation) {
       userPreferences += ` in ${currentLocation}`;
     }
-    if (jobType) {
-      userPreferences += ` (Type: ${jobType})`; // jobType not directly used by flow, but good for context
+    if (currentJobType && currentJobType !== 'all') { // Handle 'all' value for job type
+      userPreferences += ` (Type: ${currentJobType})`;
     }
 
     try {
@@ -84,14 +83,14 @@ export default function JobsPage() {
   useEffect(() => {
     // Fetch initial jobs when resume text is available/set
     if(parsedResumeText){
-        fetchJobs(keywords, location);
+        fetchJobs(keywords, location, jobType);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parsedResumeText]); // Only re-run when parsedResumeText changes initially
 
   const handleFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
-    fetchJobs(keywords, location);
+    fetchJobs(keywords, location, jobType);
   };
 
   return (
@@ -137,7 +136,7 @@ export default function JobsPage() {
                   <SelectValue placeholder="All Job Types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Job Types</SelectItem>
+                  <SelectItem value="all">All Job Types</SelectItem> {/* Changed value to "all" */}
                   <SelectItem value="full-time">Full-time</SelectItem>
                   <SelectItem value="part-time">Part-time</SelectItem>
                   <SelectItem value="contract">Contract</SelectItem>
