@@ -8,8 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  // DialogFooter, // Removed
-  // DialogClose, // Removed
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -47,8 +45,7 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
         </DialogHeader>
 
         <ScrollArea className="flex-1 overflow-y-auto">
-          {/* Added bottom padding to the inner div to ensure content doesn't touch the very bottom of scroll area */}
-          <div className="space-y-6 px-6 pt-4 pb-6"> 
+          <div className="space-y-6 px-6 pt-4 pb-6">
             {job.summary && (
                 <div>
                     <h4 className="font-semibold text-lg mb-1.5 text-foreground">Summary</h4>
@@ -95,7 +92,6 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
                 </Badge>
             </div>
 
-            {/* Moved "View Original Post" button here, into the scrollable content */}
             <div className="mt-6 pt-6 border-t border-border">
               {job.url ? (
                 <a href={job.url} target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto">
@@ -113,8 +109,6 @@ export default function JobDetailModal({ job, isOpen, onClose }: JobDetailModalP
             </div>
           </div>
         </ScrollArea>
-
-        {/* DialogFooter removed */}
       </DialogContent>
     </Dialog>
   );
