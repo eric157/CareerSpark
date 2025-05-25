@@ -1,3 +1,7 @@
+# Career Spark
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](package.json) [![Languages](https://img.shields.io/github/languages/count/eric157/Career-Spark)](https://github.com/eric157/Career-Spark) [![Top Language](https://img.shields.io/github/languages/top/eric157/Career-Spark)](https://github.com/eric157/Career-Spark) [![Last Commit](https://img.shields.io/github/last-commit/eric157/Career-Spark)](https://github.com/eric157/Career-Spark/commits/main) [![Repo Size](https://img.shields.io/github/repo-size/eric157/Career-Spark)](https://github.com/eric157/Career-Spark)
+
 ```mermaid
 ---
 config:
@@ -59,11 +63,9 @@ flowchart TB
   J --> K["✅<br/><b>Present Career Advice</b>"]:::userOutput
 ```
 
-# Career Spark
-
 Career Spark is an AI-powered tool designed to assist users with their career development. It provides features such as personalized job recommendations, resume analysis, and contextual job information, leveraging artificial intelligence to streamline the job search process.
 
-## Setup
+🛠️ ## Setup
 
 To set up the project locally, follow these steps:
 
@@ -102,22 +104,22 @@ To set up the project locally, follow these steps:
     yarn genkit:dev
     ```
 
-## AI Features and Architecture
+🤖 ## AI Features and Architecture
 
 This project leverages several AI techniques and tools, primarily orchestrated using the Genkit framework, to provide its core functionalities.
 
-### 1. Genkit Framework
+🧱 ### 1. Genkit Framework
 
 [Genkit](https://firebase.google.com/docs/genkit) (by Google) is the backbone for all AI operations. It's used to define, manage, and run AI flows, prompts, and tools, providing a structured way to build generative AI applications. We use it with the Google AI provider (Gemini models).
 
-### 2. Generative AI Models (Gemini)
+🧠 ### 2. Generative AI Models (Gemini)
 
 The application primarily uses Google's Gemini family of models (e.g., Gemini Flash) through Genkit for various tasks:
 *   **Natural Language Understanding & Generation**: For processing user queries, generating summaries, explanations, and chat responses.
 *   **Structured Data Extraction**: For parsing resumes and formatting outputs according to predefined schemas.
 *   **Decision Making**: For classifying user intent and deciding on search strategies for job recommendations.
 
-### 3. Core AI Flows
+🌊 ### 3. Core AI Flows
 
 AI flows are defined using Genkit to encapsulate specific AI-driven tasks:
 
@@ -147,7 +149,7 @@ AI flows are defined using Genkit to encapsulate specific AI-driven tasks:
         3.  It then prompts Gemini with the original query, the retrieved snippets, and (if relevant) the resume text, instructing it to answer based on the provided information and its general knowledge as a career advisor.
     *   **Output**: An AI-generated answer to the user's query, and optionally the list of retrieved context items.
 
-### 4. AI Tools (Genkit Tools)
+🔧 ### 4. AI Tools (Genkit Tools)
 
 Tools extend the LLM's capabilities by allowing it to interact with external systems or perform specific tasks:
 
@@ -163,11 +165,11 @@ Tools extend the LLM's capabilities by allowing it to interact with external sys
     *   **Implementation**: Currently uses a predefined mock knowledge base of common job-seeking advice. In a production system, this would typically query a vector database containing embedded documents about career advice, job search strategies, etc.
     *   **Output**: An array of text snippets relevant to the input query.
 
-### 5. Schema Definition and Validation
+📐 ### 5. Schema Definition and Validation
 
 [Zod](https://zod.dev/) is used extensively with Genkit to define the input and output schemas for all AI flows, prompts, and tools. This ensures data consistency, provides type safety, and helps guide the LLM in generating structured output according to the expected format. Genkit uses these schemas for validation at runtime.
 
-## Development Journey: Challenges & Solutions
+🛤️ ## Development Journey: Challenges & Solutions
 
 Building this AI-powered application involved an iterative process, tackling several common challenges:
 
@@ -209,19 +211,24 @@ Building this AI-powered application involved an iterative process, tackling sev
 
 This iterative process of identifying issues, refining prompts, adjusting code logic, and improving UI feedback was crucial to developing the application.
 
-## Tech Stack
+💻 ## Tech Stack
 
-*   **Framework**: Next.js (App Router)
-*   **AI Orchestration**: Genkit
-*   **AI Models**: Google Gemini (via Genkit Google AI Plugin)
-*   **Styling**: Tailwind CSS
-*   **UI Components**: ShadCN UI
-*   **Language**: TypeScript
-*   **Job Search API**: SerpApi (Google Jobs)
+| Category           | Technology                               |
+|--------------------|------------------------------------------|
+| Framework          | Next.js (App Router)                     |
+| AI Orchestration   | Genkit                                   |
+| AI Models          | Google Gemini (via Genkit Google AI Plugin) |
+| Styling            | Tailwind CSS                             |
+| UI Components      | ShadCN UI                                |
+| Language           | TypeScript                               |
+| Job Search API     | SerpApi (Google Jobs)                    |
 
-## Key Features
+<!-- TODO: Add GIF demonstrating the intelligent chat assistant and job recommendation process -->
+
+✨ ## Key Features
 
 *   **AI-Powered Resume Analysis**: Upload your resume (PDF/DOCX) and see an ATS-like view of extracted skills, experience, and education.
+    <!-- TODO: Add screenshot of the resume analysis output (ATS-like view) -->
 *   **Intelligent Chat Assistant**:
     *   Ask for personalized job recommendations based on your resume and queries.
     *   Get answers to general career questions, interview tips, and more using a RAG-enhanced AI.
