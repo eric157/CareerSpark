@@ -211,13 +211,15 @@ This iterative process of identifying issues, refining prompts, adjusting code l
 
 ## Tech Stack
 
-*   **Framework**: Next.js (App Router)
-*   **AI Orchestration**: Genkit
-*   **AI Models**: Google Gemini (via Genkit Google AI Plugin)
-*   **Styling**: Tailwind CSS
-*   **UI Components**: ShadCN UI
-*   **Language**: TypeScript
-*   **Job Search API**: SerpApi (Google Jobs)
+| Category           | Technology                               |
+|--------------------|------------------------------------------|
+| Framework          | Next.js (App Router)                     |
+| AI Orchestration   | Genkit                                   |
+| AI Models          | Google Gemini (via Genkit Google AI Plugin) |
+| Styling            | Tailwind CSS                             |
+| UI Components      | ShadCN UI                                |
+| Language           | TypeScript                               |
+| Job Search API     | SerpApi (Google Jobs)                    |
 
 ## Key Features
 
