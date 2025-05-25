@@ -1,3 +1,63 @@
+```mermaid
+---
+config:
+  layout: dagre
+  theme: default
+  flowchart:
+    useMaxWidth: true
+    htmlLabels: true
+    nodeSpacing: 60
+    rankSpacing: 100
+    padding: 16
+    curve: basis
+    rankDir: TB
+---
+
+flowchart TB
+  %% === Styling ===
+  classDef userInput  fill:#FDFBF2,stroke:#E6B800,stroke-width:2px,color:#000,font-size:14px,rounding:8px
+  classDef userOutput fill:#FDFBF2,stroke:#E6B800,stroke-width:2px,color:#000,font-size:14px,rounding:8px
+  classDef llmNode     fill:#FFF7E0,stroke:#E6B800,stroke-width:1px,color:#000,font-size:14px,rounding:6px
+  classDef toolNode    fill:#FFEECF,stroke:#E6B800,stroke-width:1px,color:#000,font-size:14px,rounding:6px
+
+  %% === Entry & Intent ===
+  A["🧑‍💼<br/><b>User Enters Chat Query</b>"]:::userInput
+  B["🔍<br/><b>Classify User Intent</b>"]:::userInput
+  A --> B
+
+  %% === Job Recommendation Sub-Process ===
+  subgraph subGraph0["📌 Job Recommendation Sub-Process"]
+    direction TB
+    C["🧭<br/><b>Job Recommendation Flow</b>"]:::llmNode
+    D["📝<br/><b>Formulate Search Query for Tool</b>"]:::llmNode
+    E["🔧<br/><b>Invoke searchJobsTool (SerpApi)</b>"]:::toolNode
+    R["📄<br/><b>Input: User Resume</b>"]:::toolNode
+    F["🧠<br/><b>Evaluate Results & Resume</b>"]:::llmNode
+  end
+  style subGraph0 fill:#E8F4FF,stroke:#A6CEE3,stroke-width:2px
+
+  %% === RAG-based Career Q&A Sub-Process ===
+  subgraph subGraph1["📚 RAG-based Career Q&A Sub-Process"]
+    direction TB
+    H["📖<br/><b>Contextual Job Helper Flow</b>"]:::llmNode
+    I["🔧<br/><b>Invoke Info Retriever (Mock)</b>"]:::toolNode
+    J["🧠<br/><b>Answer with Context & Resume</b>"]:::llmNode
+  end
+  style subGraph1 fill:#E8FFE8,stroke:#8FBC8F,stroke-width:2px
+
+  %% === Routing & Outputs ===
+  B -- "💼 Job Search Query" --> C
+  C --> D
+  D --> E
+  E -.-> R
+  E --> F
+  F --> G["✅<br/><b>Present Job Recommendations</b>"]:::userOutput
+
+  B -- "❓ General Career Question" --> H
+  H --> I
+  I --> J
+  J --> K["✅<br/><b>Present Career Advice</b>"]:::userOutput
+```
 
 # Career Spark
 
@@ -9,8 +69,7 @@ To set up the project locally, follow these steps:
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
-    cd career-spark
+    git clone https://github.com/eric157/Career-Spark
     ```
 
 2.  **Install dependencies:**
@@ -107,56 +166,6 @@ Tools extend the LLM's capabilities by allowing it to interact with external sys
 ### 5. Schema Definition and Validation
 
 [Zod](https://zod.dev/) is used extensively with Genkit to define the input and output schemas for all AI flows, prompts, and tools. This ensures data consistency, provides type safety, and helps guide the LLM in generating structured output according to the expected format. Genkit uses these schemas for validation at runtime.
-
-### 6. Visual Overview of AI Agent Workflow
-
-The following diagram illustrates the high-level agentic workflow within Career Spark. This is a [Mermaid](https://mermaid.js.org/) diagram, which should render visually on platforms like GitHub.
-
-```mermaid
-graph TD
-    A[User Enters Chat Query] --> B{Classify User Intent};
-    B -- Job Search Query --> C[Job Recommendation Flow];
-    C --> D{Formulate Search Query for Tool};
-    D --> E[Invoke searchJobsTool (SerpApi)];
-    E --> F[LLM Evaluates Job Results & Resume];
-    F --> G[Present Job Recommendations to User];
-    B -- General Career Question --> H[Contextual Job Helper Flow (RAG)];
-    H --> I[Invoke relevantInfoRetrieverTool (Mock)];
-    I --> J[LLM Answers Question (using retrieved context + resume)];
-    J --> K[Present Answer to User];
-
-    subgraph "Job Recommendation Sub-Process"
-        C
-        D
-        E
-        F
-    end
-
-    subgraph "RAG Sub-Process"
-        H
-        I
-        J
-    end
-
-    style A fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
-    style B fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
-    style C fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
-    style D fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
-    style E fill:#FFEECF,stroke:#E6B800,stroke-width:1px
-    style F fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
-    style G fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
-    style H fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
-    style I fill:#FFEECF,stroke:#E6B800,stroke-width:1px
-    style J fill:#FFF7E0,stroke:#E6B800,stroke-width:1px
-    style K fill:#FDFBF2,stroke:#E6B800,stroke-width:2px
-```
-
-**Diagram Legend:**
-- Diamond shapes (like "Classify User Intent") represent decision points or AI model invocations for classification.
-- Rectangular shapes represent processes or AI flows.
-- Rounded rectangles within subgraphs represent major steps within those flows.
-- Arrows indicate the direction of data or control flow.
-
 
 ## Development Journey: Challenges & Solutions
 
